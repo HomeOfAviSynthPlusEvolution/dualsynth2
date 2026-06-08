@@ -394,15 +394,11 @@ void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core,
 }
 
 void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  constexpr std::array<const char*, ds::reference::VideoTranspose::input_count> input_names{"clip"};
-  create_video_filter<ds::reference::VideoTranspose>(
+  create_video_filter_bridge<ds::reference::VideoTransposeBridge>(
     in,
     out,
     core,
-    vsapi,
-    input_names,
-    "DualSynth reference: missing required video clip",
-    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+    vsapi
   );
 }
 
@@ -624,8 +620,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction(
-    "VideoTranspose",
-    "clip:vnode;",
+    ds::reference::VideoTransposeBridge::vs_name,
+    ds::reference::VideoTransposeBridge::vs_signature,
     "clip:vnode;",
     video_transpose_create,
     nullptr,

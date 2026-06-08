@@ -338,11 +338,7 @@ AVSValue __cdecl create_video_invert(AVSValue args, void*, IScriptEnvironment* e
 }
 
 AVSValue __cdecl create_video_transpose(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter<ds::reference::VideoTranspose>(
-    args,
-    env,
-    "DualSynth reference: DSVideoTranspose supports only Y8 video"
-  );
+  return create_video_filter_bridge<ds::reference::VideoTransposeBridge>(args, env);
 }
 
 AVSValue __cdecl create_audio_test_tone(AVSValue args, void*, IScriptEnvironment* env) {
@@ -378,7 +374,12 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   env->AddFunction("DSTestPattern", "ii", create_test_pattern, nullptr);
   env->AddFunction("DSVideoIdentity", "c", create_video_identity, nullptr);
   env->AddFunction("DSVideoInvert", "c", create_video_invert, nullptr);
-  env->AddFunction("DSVideoTranspose", "c", create_video_transpose, nullptr);
+  env->AddFunction(
+    ds::reference::VideoTransposeBridge::avs_name,
+    ds::reference::VideoTransposeBridge::avs_signature,
+    create_video_transpose,
+    nullptr
+  );
   env->AddFunction(
     ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
     ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_signature,

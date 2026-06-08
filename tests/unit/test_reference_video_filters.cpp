@@ -4,6 +4,7 @@
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -131,6 +132,20 @@ TEST_CASE("Reference video descriptors expose metadata and initialize output inf
   REQUIRE(transpose_init.value().output.width == 7);
   REQUIRE(transpose_init.value().output.height == 13);
   REQUIRE(transpose_init.value().output.num_frames == 3);
+}
+
+TEST_CASE("VideoTransposeBridge exposes host binding metadata") {
+  using Bridge = ds::reference::VideoTransposeBridge;
+
+  REQUIRE((std::is_same_v<Bridge::Core, ds::reference::VideoTranspose>));
+  REQUIRE(std::string(Bridge::vs_name) == "VideoTranspose");
+  REQUIRE(std::string(Bridge::vs_signature) == "clip:vnode;");
+  REQUIRE(Bridge::vs_input_names.size() == 1);
+  REQUIRE(std::string(Bridge::vs_input_names[0]) == "clip");
+  REQUIRE(std::string(Bridge::avs_name) == "DSVideoTranspose");
+  REQUIRE(std::string(Bridge::avs_signature) == "c");
+  REQUIRE(Bridge::parity_source_index == 0);
+  REQUIRE(Bridge::forward_audio == true);
 }
 
 TEST_CASE("Video filter dispatch helper requests and processes through descriptors") {

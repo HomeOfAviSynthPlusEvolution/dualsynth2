@@ -3,6 +3,7 @@
 #include <dualsynth/plane_span.hpp>
 #include <dualsynth/video_filter.hpp>
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <type_traits>
@@ -182,6 +183,27 @@ struct VideoTranspose {
     transpose_plane(frame.value().plane, context.dst);
     return Result<VideoProcessResult>::success(VideoProcessResult{});
   }
+};
+
+struct VideoTransposeBridge {
+  using Core = VideoTranspose;
+
+  static constexpr const char* vs_name = "VideoTranspose";
+  static constexpr const char* vs_signature = "clip:vnode;";
+  static constexpr std::array<const char*, static_cast<std::size_t>(Core::input_count)> vs_input_names{
+    "clip"
+  };
+
+  static constexpr const char* avs_name = "DSVideoTranspose";
+  static constexpr const char* avs_signature = "c";
+
+  static constexpr const char* missing_input_error = "DualSynth reference: missing required video clip";
+  static constexpr const char* vs_format_error =
+    "DualSynth reference: only GRAY8 is supported by this VS reference filter";
+  static constexpr const char* avs_format_error =
+    "DualSynth reference: DSVideoTranspose supports only Y8 video";
+  static constexpr std::size_t parity_source_index = 0;
+  static constexpr bool forward_audio = true;
 };
 
 } // namespace ds::reference
