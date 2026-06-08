@@ -6,6 +6,7 @@
 #include <dualsynth/media.hpp>
 #include <dualsynth/param.hpp>
 #include <dualsynth/plane_span.hpp>
+#include <dualsynth/reference/video_filters.hpp>
 
 namespace ds {
 constexpr int version_major = 0;
