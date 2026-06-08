@@ -1,5 +1,6 @@
 #pragma once
 
+#include <dualsynth/mdspan.hpp>
 #include <dualsynth/plane_span.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
@@ -11,12 +12,20 @@
 namespace ds::reference {
 
 template <class T>
-void copy_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
-  for (int y = 0; y < src.height(); ++y) {
-    const auto src_row = src.row(y);
-    const auto dst_row = dst.row(y);
-    for (int x = 0; x < src.width(); ++x) {
-      dst_row[static_cast<std::size_t>(x)] = src_row[static_cast<std::size_t>(x)];
+PlaneView2D<T> plane_view_from_span(PlaneSpan<T> plane) {
+  return make_plane_view(
+    plane.row(0).data(),
+    plane.width(),
+    plane.height(),
+    plane.stride_bytes()
+  );
+}
+
+template <class T>
+void copy_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
+  for (std::size_t y = 0; y < src.extent(0); ++y) {
+    for (std::size_t x = 0; x < src.extent(1); ++x) {
+      dst[y, x] = src[y, x];
     }
   }
 }
@@ -33,24 +42,20 @@ constexpr T max_sample_value() {
 }
 
 template <class T>
-void invert_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
+void invert_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
   const T max_value = max_sample_value<T>();
-  for (int y = 0; y < src.height(); ++y) {
-    const auto src_row = src.row(y);
-    const auto dst_row = dst.row(y);
-    for (int x = 0; x < src.width(); ++x) {
-      dst_row[static_cast<std::size_t>(x)] =
-        static_cast<T>(max_value - src_row[static_cast<std::size_t>(x)]);
+  for (std::size_t y = 0; y < src.extent(0); ++y) {
+    for (std::size_t x = 0; x < src.extent(1); ++x) {
+      dst[y, x] = static_cast<T>(max_value - src[y, x]);
     }
   }
 }
 
 template <class T>
-void transpose_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
-  for (int y = 0; y < src.height(); ++y) {
-    const auto src_row = src.row(y);
-    for (int x = 0; x < src.width(); ++x) {
-      dst(x, y) = src_row[static_cast<std::size_t>(x)];
+void transpose_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
+  for (std::size_t y = 0; y < src.extent(0); ++y) {
+    for (std::size_t x = 0; x < src.extent(1); ++x) {
+      dst[x, y] = src[y, x];
     }
   }
 }
@@ -90,12 +95,12 @@ inline Result<RequestedVideoFrame> get_current_input_frame(VideoProcessContext& 
   return context.frames.get(0, context.output_frame);
 }
 
-inline bool dimensions_match(PlaneSpan<const unsigned char> src, PlaneSpan<unsigned char> dst) {
-  return src.width() == dst.width() && src.height() == dst.height();
+inline bool dimensions_match(PlaneView2D<const unsigned char> src, PlaneView2D<unsigned char> dst) {
+  return src.extent(1) == dst.extent(1) && src.extent(0) == dst.extent(0);
 }
 
-inline bool transposed_dimensions_match(PlaneSpan<const unsigned char> src, PlaneSpan<unsigned char> dst) {
-  return src.width() == dst.height() && src.height() == dst.width();
+inline bool transposed_dimensions_match(PlaneView2D<const unsigned char> src, PlaneView2D<unsigned char> dst) {
+  return src.extent(1) == dst.extent(0) && src.extent(0) == dst.extent(1);
 }
 
 struct VideoIdentity {
@@ -116,13 +121,15 @@ struct VideoIdentity {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    if (!dimensions_match(frame.value().plane, context.dst)) {
+    const auto src = plane_view_from_span(frame.value().plane);
+    const auto dst = plane_view_from_span(context.dst);
+    if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoIdentity frame dimensions do not match output"}
       );
     }
 
-    copy_plane(frame.value().plane, context.dst);
+    copy_plane(src, dst);
     return Result<VideoProcessResult>::success(VideoProcessResult{});
   }
 };
@@ -145,13 +152,15 @@ struct VideoInvert {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    if (!dimensions_match(frame.value().plane, context.dst)) {
+    const auto src = plane_view_from_span(frame.value().plane);
+    const auto dst = plane_view_from_span(context.dst);
+    if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoInvert frame dimensions do not match output"}
       );
     }
 
-    invert_plane(frame.value().plane, context.dst);
+    invert_plane(src, dst);
     return Result<VideoProcessResult>::success(VideoProcessResult{});
   }
 };
@@ -174,13 +183,15 @@ struct VideoTranspose {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    if (!transposed_dimensions_match(frame.value().plane, context.dst)) {
+    const auto src = plane_view_from_span(frame.value().plane);
+    const auto dst = plane_view_from_span(context.dst);
+    if (!transposed_dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoTranspose frame dimensions do not match output"}
       );
     }
 
-    transpose_plane(frame.value().plane, context.dst);
+    transpose_plane(src, dst);
     return Result<VideoProcessResult>::success(VideoProcessResult{});
   }
 };
