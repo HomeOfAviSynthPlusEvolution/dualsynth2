@@ -6,6 +6,7 @@
 #include <dualsynth/reference/video_filters.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -126,27 +127,38 @@ private:
   VideoInfo vi_{};
 };
 
-class VideoFilter final : public GenericVideoFilter {
+template <std::size_t InputCount>
+class VideoFilter final : public IClip {
 public:
-  VideoFilter(PClip child, ds::VideoOutputInfo output, VideoProcessFn process)
-    : GenericVideoFilter(child),
-      clips_{child},
-      process_(process) {
-    vi.width = output.width;
-    vi.height = output.height;
-    vi.num_frames = output.num_frames;
+  VideoFilter(
+    std::array<PClip, InputCount> clips,
+    ds::VideoOutputInfo output,
+    VideoProcessFn process,
+    std::size_t parity_source_index,
+    bool forward_audio
+  ) : clips_(clips),
+      process_(process),
+      parity_source_index_(parity_source_index),
+      forward_audio_(forward_audio) {
+    vi_ = clips_[0]->GetVideoInfo();
+    vi_.width = output.width;
+    vi_.height = output.height;
+    vi_.num_frames = output.num_frames;
+    if (!forward_audio_) {
+      initialize_no_audio(vi_);
+    }
   }
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame dst = env->NewVideoFrame(vi);
+    PVideoFrame dst = env->NewVideoFrame(vi_);
     AVSFrameProvider provider(clips_, env);
     const auto result = process_(
       n,
       provider,
       ds::PlaneSpan<BYTE>(
         dst->GetWritePtr(PLANAR_Y),
-        vi.width,
-        vi.height,
+        vi_.width,
+        vi_.height,
         dst->GetPitch(PLANAR_Y)
       )
     );
@@ -158,9 +170,31 @@ public:
     return dst;
   }
 
+  bool __stdcall GetParity(int n) override {
+    return clips_[parity_source_index_]->GetParity(n);
+  }
+
+  void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) override {
+    if (!forward_audio_) {
+      env->ThrowError("DualSynth reference: video filter has no audio");
+    }
+    clips_[0]->GetAudio(buf, start, count, env);
+  }
+
+  int __stdcall SetCacheHints(int, int) override {
+    return 0;
+  }
+
+  const VideoInfo& __stdcall GetVideoInfo() override {
+    return vi_;
+  }
+
 private:
-  std::array<PClip, 1> clips_;
+  std::array<PClip, InputCount> clips_;
   VideoProcessFn process_;
+  std::size_t parity_source_index_;
+  bool forward_audio_;
+  VideoInfo vi_{};
 };
 
 class AudioTestToneClip final : public IClip {
@@ -225,54 +259,6 @@ private:
   double gain_;
 };
 
-class AcceptanceTemporalAverage3Filter final : public IClip {
-public:
-  explicit AcceptanceTemporalAverage3Filter(std::array<PClip, 3> clips)
-    : clips_(clips) {
-    vi_ = clips_[1]->GetVideoInfo();
-  }
-
-  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame dst = env->NewVideoFrame(vi_);
-    AVSFrameProvider provider(clips_, env);
-    const auto result = ds::process_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
-      n,
-      provider,
-      ds::PlaneSpan<BYTE>(
-        dst->GetWritePtr(PLANAR_Y),
-        vi_.width,
-        vi_.height,
-        dst->GetPitch(PLANAR_Y)
-      )
-    );
-    if (!result.has_value()) {
-      env->ThrowError(result.error().message.c_str());
-    }
-
-    return dst;
-  }
-
-  bool __stdcall GetParity(int n) override {
-    return clips_[1]->GetParity(n);
-  }
-
-  void __stdcall GetAudio(void*, int64_t, int64_t, IScriptEnvironment* env) override {
-    env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 has no audio");
-  }
-
-  int __stdcall SetCacheHints(int, int) override {
-    return 0;
-  }
-
-  const VideoInfo& __stdcall GetVideoInfo() override {
-    return vi_;
-  }
-
-private:
-  std::array<PClip, 3> clips_;
-  VideoInfo vi_{};
-};
-
 AVSValue __cdecl create_test_pattern(AVSValue args, void*, IScriptEnvironment* env) {
   const int width = args[0].AsInt();
   const int height = args[1].AsInt();
@@ -288,26 +274,39 @@ template <class Filter>
 AVSValue create_video_filter(
   AVSValue args,
   IScriptEnvironment* env,
-  const char* format_error
+  const char* format_error,
+  std::size_t parity_source_index = 0,
+  bool forward_audio = true
 ) {
-  PClip clip = args[0].AsClip();
-  const VideoInfo& vi = clip->GetVideoInfo();
-  if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
-    env->ThrowError(format_error);
+  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
+  std::array<PClip, input_count> clips{};
+  std::array<ds::VideoInputInfo, input_count> input_infos{};
+
+  for (std::size_t i = 0; i < input_count; ++i) {
+    clips[i] = args[static_cast<int>(i)].AsClip();
+    const VideoInfo& vi = clips[i]->GetVideoInfo();
+    if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
+      env->ThrowError(format_error);
+    }
+    input_infos[i] = ds::VideoInputInfo{vi.width, vi.height, vi.num_frames};
   }
 
-  std::array<ds::VideoInputInfo, Filter::input_count> input_infos{
-    ds::VideoInputInfo{vi.width, vi.height, vi.num_frames}
-  };
-  const auto init_result = ds::init_video_filter<Filter>(input_infos);
+  const auto collected = ds::collect_video_input_infos<Filter>(input_infos);
+  if (!collected.has_value()) {
+    env->ThrowError(collected.error().message.c_str());
+  }
+
+  const auto init_result = ds::init_video_filter<Filter>(collected.value());
   if (!init_result.has_value()) {
     env->ThrowError(init_result.error().message.c_str());
   }
 
-  return new VideoFilter(
-    clip,
+  return new VideoFilter<input_count>(
+    clips,
     init_result.value().output,
-    ds::process_video_filter<Filter>
+    ds::process_video_filter<Filter>,
+    parity_source_index,
+    forward_audio
   );
 }
 
@@ -355,28 +354,13 @@ AVSValue __cdecl create_audio_gain(AVSValue args, void*, IScriptEnvironment* env
 }
 
 AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScriptEnvironment* env) {
-  std::array<PClip, 3> clips{
-    args[0].AsClip(),
-    args[1].AsClip(),
-    args[2].AsClip()
-  };
-
-  std::array<ds::VideoInputInfo, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_infos{};
-  for (std::size_t i = 0; i < clips.size(); ++i) {
-    const VideoInfo& input_vi = clips[i]->GetVideoInfo();
-    if (!input_vi.HasVideo() ||
-        !input_vi.IsColorSpace(VideoInfo::CS_Y8)) {
-      env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video");
-    }
-    input_infos[i] = ds::VideoInputInfo{input_vi.width, input_vi.height, input_vi.num_frames};
-  }
-
-  const auto init_result = ds::init_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(input_infos);
-  if (!init_result.has_value()) {
-    env->ThrowError(init_result.error().message.c_str());
-  }
-
-  return new AcceptanceTemporalAverage3Filter(clips);
+  return create_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
+    args,
+    env,
+    "DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video",
+    1,
+    false
+  );
 }
 
 } // namespace

@@ -3,7 +3,10 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/plane_span.hpp>
 
+#include <array>
+#include <cstddef>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace ds {
@@ -96,6 +99,26 @@ struct VideoProcessContext {
   VideoFrameProvider& frames;
   PlaneSpan<unsigned char> dst;
 };
+
+template <class Filter>
+Result<std::array<VideoInputInfo, static_cast<std::size_t>(Filter::input_count)>>
+collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
+  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
+  if (inputs.size() != input_count) {
+    return Result<std::array<VideoInputInfo, input_count>>::failure(
+      Error{
+        ErrorCode::InvalidArgument,
+        std::string(Filter::name) + " received the wrong number of video inputs"
+      }
+    );
+  }
+
+  std::array<VideoInputInfo, input_count> collected{};
+  for (std::size_t i = 0; i < input_count; ++i) {
+    collected[i] = inputs[i];
+  }
+  return Result<std::array<VideoInputInfo, input_count>>::success(collected);
+}
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {

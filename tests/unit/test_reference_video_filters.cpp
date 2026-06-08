@@ -1,6 +1,7 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 #include <string>
 #include <vector>
@@ -156,4 +157,29 @@ TEST_CASE("Video filter dispatch helper requests and processes through descripto
   REQUIRE(provider.requested_input() == 0);
   REQUIRE(provider.requested_frame() == 4);
   REQUIRE(dst_storage == std::array<unsigned char, 4>{255, 245, 128, 0});
+}
+
+TEST_CASE("Video input info helper follows descriptor input count") {
+  std::vector<ds::VideoInputInfo> inputs{
+    ds::VideoInputInfo{16, 9, 3},
+    ds::VideoInputInfo{16, 9, 3},
+    ds::VideoInputInfo{16, 9, 3}
+  };
+
+  const auto collected = ds::collect_video_input_infos<ds::acceptance::AcceptanceTemporalAverage3>(inputs);
+
+  REQUIRE(collected.has_value());
+  REQUIRE(collected.value().size() == 3);
+  REQUIRE(collected.value()[0].width == 16);
+  REQUIRE(collected.value()[1].height == 9);
+  REQUIRE(collected.value()[2].num_frames == 3);
+}
+
+TEST_CASE("Video input info helper rejects the wrong input count") {
+  std::vector<ds::VideoInputInfo> inputs{ds::VideoInputInfo{16, 9, 3}};
+
+  const auto collected = ds::collect_video_input_infos<ds::acceptance::AcceptanceTemporalAverage3>(inputs);
+
+  REQUIRE(!collected.has_value());
+  REQUIRE(collected.error().code == ds::ErrorCode::InvalidArgument);
 }

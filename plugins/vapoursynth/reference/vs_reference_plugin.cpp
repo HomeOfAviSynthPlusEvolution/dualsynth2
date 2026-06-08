@@ -28,8 +28,9 @@ using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
   ds::PlaneSpan<unsigned char>
 );
 
+template <std::size_t InputCount>
 struct VideoFilterData {
-  std::array<VSNode*, 1> nodes{};
+  std::array<VSNode*, InputCount> nodes{};
   VSVideoInfo video_info{};
   VideoRequestFn request = nullptr;
   VideoProcessFn process = nullptr;
@@ -43,11 +44,6 @@ struct AudioGainData {
   VSNode* node = nullptr;
   VSAudioInfo audio_info{};
   double gain = 1.0;
-};
-
-struct AcceptanceTemporalAverage3Data {
-  std::array<VSNode*, 3> nodes{};
-  VSVideoInfo video_info{};
 };
 
 class VSFrameProvider final : public ds::VideoFrameProvider {
@@ -186,6 +182,7 @@ void VS_CC test_pattern_create(const VSMap* in, VSMap* out, void*, VSCore* core,
   );
 }
 
+template <std::size_t InputCount>
 const VSFrame* VS_CC video_filter_get_frame(
   int n,
   int activation_reason,
@@ -195,7 +192,7 @@ const VSFrame* VS_CC video_filter_get_frame(
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  auto* data = static_cast<VideoFilterData*>(instance_data);
+  auto* data = static_cast<VideoFilterData<InputCount>*>(instance_data);
 
   if (activation_reason == arInitial) {
     std::vector<ds::VideoFrameRequest> requests;
@@ -249,8 +246,9 @@ const VSFrame* VS_CC video_filter_get_frame(
   return dst;
 }
 
+template <std::size_t InputCount>
 void VS_CC video_filter_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
-  auto* data = static_cast<VideoFilterData*>(instance_data);
+  auto* data = static_cast<VideoFilterData<InputCount>*>(instance_data);
   for (VSNode* node : data->nodes) {
     if (node != nullptr) {
       vsapi->freeNode(node);
@@ -264,68 +262,130 @@ void create_video_filter(
   const VSMap* in,
   VSMap* out,
   VSCore* core,
-  const VSAPI* vsapi
+  const VSAPI* vsapi,
+  const std::array<const char*, static_cast<std::size_t>(Filter::input_count)>& input_names,
+  const char* missing_error,
+  const char* format_error
 ) {
-  int error = 0;
-  VSNode* node = vsapi->mapGetNode(in, "clip", 0, &error);
-  if (error != peSuccess || node == nullptr) {
-    vsapi->mapSetError(out, "DualSynth reference: missing required video clip");
+  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
+  std::array<VSNode*, input_count> nodes{};
+  std::array<ds::VideoInputInfo, input_count> input_infos{};
+
+  for (std::size_t i = 0; i < input_count; ++i) {
+    int error = 0;
+    nodes[i] = vsapi->mapGetNode(in, input_names[i], 0, &error);
+    if (error != peSuccess || nodes[i] == nullptr) {
+      for (VSNode* node : nodes) {
+        if (node != nullptr) {
+          vsapi->freeNode(node);
+        }
+      }
+      vsapi->mapSetError(out, missing_error);
+      return;
+    }
+
+    const VSVideoInfo* input_info = vsapi->getVideoInfo(nodes[i]);
+    if (input_info->format.colorFamily != cfGray ||
+        input_info->format.sampleType != stInteger ||
+        input_info->format.bitsPerSample != 8) {
+      for (VSNode* node : nodes) {
+        if (node != nullptr) {
+          vsapi->freeNode(node);
+        }
+      }
+      vsapi->mapSetError(out, format_error);
+      return;
+    }
+
+    input_infos[i] = ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames};
+  }
+
+  const auto collected = ds::collect_video_input_infos<Filter>(input_infos);
+  if (!collected.has_value()) {
+    for (VSNode* node : nodes) {
+      if (node != nullptr) {
+        vsapi->freeNode(node);
+      }
+    }
+    vsapi->mapSetError(out, collected.error().message.c_str());
     return;
   }
 
-  const VSVideoInfo* input_info = vsapi->getVideoInfo(node);
-  if (input_info->format.colorFamily != cfGray ||
-      input_info->format.sampleType != stInteger ||
-      input_info->format.bitsPerSample != 8) {
-    vsapi->freeNode(node);
-    vsapi->mapSetError(out, "DualSynth reference: only GRAY8 is supported by this VS reference filter");
-    return;
-  }
-
-  std::array<ds::VideoInputInfo, Filter::input_count> input_infos{
-    ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames}
-  };
-  const auto init_result = ds::init_video_filter<Filter>(input_infos);
+  const auto init_result = ds::init_video_filter<Filter>(collected.value());
   if (!init_result.has_value()) {
-    vsapi->freeNode(node);
+    for (VSNode* free_node : nodes) {
+      vsapi->freeNode(free_node);
+    }
     vsapi->mapSetError(out, init_result.error().message.c_str());
     return;
   }
 
-  auto* data = new VideoFilterData();
-  data->nodes[0] = node;
-  data->video_info = *input_info;
+  const VSVideoInfo* base_info = vsapi->getVideoInfo(nodes[0]);
+  auto* data = new VideoFilterData<input_count>();
+  data->nodes = nodes;
+  data->video_info = *base_info;
   data->video_info.width = init_result.value().output.width;
   data->video_info.height = init_result.value().output.height;
   data->video_info.numFrames = init_result.value().output.num_frames;
   data->request = ds::request_video_filter<Filter>;
   data->process = ds::process_video_filter<Filter>;
 
-  const VSFilterDependency dependency{node, rpStrictSpatial};
+  std::array<VSFilterDependency, input_count> dependencies{};
+  for (std::size_t i = 0; i < input_count; ++i) {
+    dependencies[i] = VSFilterDependency{nodes[i], rpStrictSpatial};
+  }
+
   vsapi->createVideoFilter(
     out,
     Filter::name,
     &data->video_info,
-    video_filter_get_frame,
-    video_filter_free,
+    video_filter_get_frame<input_count>,
+    video_filter_free<input_count>,
     fmParallel,
-    &dependency,
-    1,
+    dependencies.data(),
+    static_cast<int>(dependencies.size()),
     data,
     core
   );
 }
 
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter<ds::reference::VideoIdentity>(in, out, core, vsapi);
+  constexpr std::array<const char*, ds::reference::VideoIdentity::input_count> input_names{"clip"};
+  create_video_filter<ds::reference::VideoIdentity>(
+    in,
+    out,
+    core,
+    vsapi,
+    input_names,
+    "DualSynth reference: missing required video clip",
+    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+  );
 }
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter<ds::reference::VideoInvert>(in, out, core, vsapi);
+  constexpr std::array<const char*, ds::reference::VideoInvert::input_count> input_names{"clip"};
+  create_video_filter<ds::reference::VideoInvert>(
+    in,
+    out,
+    core,
+    vsapi,
+    input_names,
+    "DualSynth reference: missing required video clip",
+    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+  );
 }
 
 void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter<ds::reference::VideoTranspose>(in, out, core, vsapi);
+  constexpr std::array<const char*, ds::reference::VideoTranspose::input_count> input_names{"clip"};
+  create_video_filter<ds::reference::VideoTranspose>(
+    in,
+    out,
+    core,
+    vsapi,
+    input_names,
+    "DualSynth reference: missing required video clip",
+    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+  );
 }
 
 int audio_frame_count(int64_t num_samples) {
@@ -490,78 +550,6 @@ void VS_CC audio_gain_create(const VSMap* in, VSMap* out, void*, VSCore* core, c
   );
 }
 
-const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
-  int n,
-  int activation_reason,
-  void* instance_data,
-  void**,
-  VSFrameContext* frame_ctx,
-  VSCore* core,
-  const VSAPI* vsapi
-) {
-  auto* data = static_cast<AcceptanceTemporalAverage3Data*>(instance_data);
-
-  if (activation_reason == arInitial) {
-    std::vector<ds::VideoFrameRequest> requests;
-    const auto result = ds::request_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(n, requests);
-    if (!result.has_value()) {
-      return nullptr;
-    }
-
-    for (const auto& request : requests) {
-      if (request.input_index < 0 || request.input_index >= static_cast<int>(data->nodes.size())) {
-        return nullptr;
-      }
-      vsapi->requestFrameFilter(
-        request.frame_number,
-        data->nodes[static_cast<std::size_t>(request.input_index)],
-        frame_ctx
-      );
-    }
-    return nullptr;
-  }
-
-  if (activation_reason != arAllFramesReady) {
-    return nullptr;
-  }
-
-  VSFrame* dst = vsapi->newVideoFrame(
-    &data->video_info.format,
-    data->video_info.width,
-    data->video_info.height,
-    nullptr,
-    core
-  );
-
-  VSFrameProvider provider(data->nodes, frame_ctx, vsapi);
-  const auto result = ds::process_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
-    n,
-    provider,
-    ds::PlaneSpan<unsigned char>(
-      vsapi->getWritePtr(dst, 0),
-      data->video_info.width,
-      data->video_info.height,
-      vsapi->getStride(dst, 0)
-    )
-  );
-  if (!result.has_value()) {
-    vsapi->freeFrame(dst);
-    return nullptr;
-  }
-
-  return dst;
-}
-
-void VS_CC acceptance_temporal_average3_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
-  auto* data = static_cast<AcceptanceTemporalAverage3Data*>(instance_data);
-  for (VSNode* node : data->nodes) {
-    if (node != nullptr) {
-      vsapi->freeNode(node);
-    }
-  }
-  delete data;
-}
-
 void VS_CC acceptance_temporal_average3_create(
   const VSMap* in,
   VSMap* out,
@@ -569,71 +557,19 @@ void VS_CC acceptance_temporal_average3_create(
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  std::array<const char*, 3> names{"a", "b", "c"};
-  std::array<VSNode*, 3> nodes{};
-
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    int error = 0;
-    nodes[i] = vsapi->mapGetNode(in, names[i], 0, &error);
-    if (error != peSuccess || nodes[i] == nullptr) {
-      for (VSNode* node : nodes) {
-        if (node != nullptr) {
-          vsapi->freeNode(node);
-        }
-      }
-      vsapi->mapSetError(out, "DualSynth reference: missing required AcceptanceTemporalAverage3 clip");
-      return;
-    }
-  }
-
-  std::array<ds::VideoInputInfo, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_infos{};
-  for (std::size_t i = 0; i < nodes.size(); ++i) {
-    const VSVideoInfo* input_info = vsapi->getVideoInfo(nodes[i]);
-    if (input_info->format.colorFamily != cfGray ||
-        input_info->format.sampleType != stInteger ||
-        input_info->format.bitsPerSample != 8) {
-      for (VSNode* node : nodes) {
-        vsapi->freeNode(node);
-      }
-      vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video");
-      return;
-    }
-    input_infos[i] = ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames};
-  }
-
-  const auto init_result = ds::init_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(input_infos);
-  if (!init_result.has_value()) {
-    for (VSNode* node : nodes) {
-      vsapi->freeNode(node);
-    }
-    vsapi->mapSetError(out, init_result.error().message.c_str());
-    return;
-  }
-
-  auto* data = new AcceptanceTemporalAverage3Data();
-  data->nodes = nodes;
-  data->video_info = *vsapi->getVideoInfo(nodes[1]);
-  data->video_info.width = init_result.value().output.width;
-  data->video_info.height = init_result.value().output.height;
-  data->video_info.numFrames = init_result.value().output.num_frames;
-
-  std::array<VSFilterDependency, 3> dependencies{
-    VSFilterDependency{nodes[0], rpStrictSpatial},
-    VSFilterDependency{nodes[1], rpStrictSpatial},
-    VSFilterDependency{nodes[2], rpStrictSpatial}
+  constexpr std::array<const char*, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_names{
+    "a",
+    "b",
+    "c"
   };
-
-  vsapi->createVideoFilter(
+  create_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
+    in,
     out,
-    ds::acceptance::AcceptanceTemporalAverage3::name,
-    &data->video_info,
-    acceptance_temporal_average3_get_frame,
-    acceptance_temporal_average3_free,
-    fmParallel,
-    dependencies.data(),
-    static_cast<int>(dependencies.size()),
-    data,
-    core
+    core,
+    vsapi,
+    input_names,
+    "DualSynth reference: missing required AcceptanceTemporalAverage3 clip",
+    "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video"
   );
 }
 
