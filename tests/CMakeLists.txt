@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(dualsynth_unit_tests
   unit/test_error.cpp
   unit/test_format.cpp
+  unit/test_plane_span.cpp
 )
 
 target_link_libraries(dualsynth_unit_tests

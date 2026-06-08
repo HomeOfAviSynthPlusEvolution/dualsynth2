@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/media.hpp>
+#include <dualsynth/plane_span.hpp>
 
 namespace ds {
 constexpr int version_major = 0;
