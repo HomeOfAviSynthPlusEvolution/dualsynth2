@@ -59,6 +59,65 @@ inline int plane_id(VideoFormat format, int plane) {
   return yuv_planes[static_cast<std::size_t>(plane)];
 }
 
+inline int yuv_pixel_type(VideoFormat format) {
+  if (format.plane_count != 3) {
+    return VideoInfo::CS_UNKNOWN;
+  }
+
+  if (format.subsampling_w == 0 && format.subsampling_h == 0) {
+    switch (format.sample_format) {
+    case SampleFormat::UInt8:
+      return VideoInfo::CS_YV24;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_YUV444P10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_YUV444P12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_YUV444P14;
+    case SampleFormat::UInt16:
+      return VideoInfo::CS_YUV444P16;
+    case SampleFormat::Float32:
+      return VideoInfo::CS_YUV444PS;
+    }
+  }
+
+  if (format.subsampling_w == 1 && format.subsampling_h == 0) {
+    switch (format.sample_format) {
+    case SampleFormat::UInt8:
+      return VideoInfo::CS_YV16;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_YUV422P10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_YUV422P12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_YUV422P14;
+    case SampleFormat::UInt16:
+      return VideoInfo::CS_YUV422P16;
+    case SampleFormat::Float32:
+      return VideoInfo::CS_YUV422PS;
+    }
+  }
+
+  if (format.subsampling_w == 1 && format.subsampling_h == 1) {
+    switch (format.sample_format) {
+    case SampleFormat::UInt8:
+      return VideoInfo::CS_YV12;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_YUV420P10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_YUV420P12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_YUV420P14;
+    case SampleFormat::UInt16:
+      return VideoInfo::CS_YUV420P16;
+    case SampleFormat::Float32:
+      return VideoInfo::CS_YUV420PS;
+    }
+  }
+
+  return VideoInfo::CS_UNKNOWN;
+}
+
 inline int pixel_type(VideoFormat format) {
   if (format.color_family == ColorFamily::Gray) {
     switch (format.sample_format) {
@@ -92,6 +151,10 @@ inline int pixel_type(VideoFormat format) {
     case SampleFormat::Float32:
       return VideoInfo::CS_RGBPS;
     }
+  }
+
+  if (format.color_family == ColorFamily::Yuv) {
+    return yuv_pixel_type(format);
   }
 
   return VideoInfo::CS_UNKNOWN;
