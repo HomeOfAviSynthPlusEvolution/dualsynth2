@@ -1,9 +1,10 @@
 #include <avisynth.h>
 
-#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/avisynth/video_bridge.hpp>
-#include <dualsynth/reference/audio_filters.hpp>
-#include <dualsynth/reference/video_filters.hpp>
+
+#include "audio_filters.hpp"
+#include "temporal_average3.hpp"
+#include "video_filters.hpp"
 
 #include <array>
 #include <cstddef>

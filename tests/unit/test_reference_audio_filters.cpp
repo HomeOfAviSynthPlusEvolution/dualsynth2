@@ -1,7 +1,7 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <dualsynth/reference/audio_filters.hpp>
+#include "audio_filters.hpp"
 
 TEST_CASE("Reference audio identity copies samples") {
   const std::array<float, 4> src{0.0F, 0.25F, -0.5F, 1.0F};

@@ -1,9 +1,10 @@
 #include <vapoursynth/VapourSynth4.h>
 
-#include <dualsynth/acceptance/temporal_average3.hpp>
-#include <dualsynth/reference/audio_filters.hpp>
-#include <dualsynth/reference/video_filters.hpp>
 #include <dualsynth/vapoursynth/video_bridge.hpp>
+
+#include "audio_filters.hpp"
+#include "temporal_average3.hpp"
+#include "video_filters.hpp"
 
 #include <algorithm>
 #include <array>

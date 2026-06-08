@@ -1,9 +1,9 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
-#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/mdspan.hpp>
-#include <dualsynth/reference/video_filters.hpp>
+#include "temporal_average3.hpp"
+#include "video_filters.hpp"
 #include <cstddef>
 #include <string>
 #include <type_traits>

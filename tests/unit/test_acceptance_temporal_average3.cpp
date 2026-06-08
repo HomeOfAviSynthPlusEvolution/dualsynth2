@@ -1,6 +1,6 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
-#include <dualsynth/acceptance/temporal_average3.hpp>
+#include "temporal_average3.hpp"
 #include <dualsynth/mdspan.hpp>
 #include <cstddef>
 #include <string>
