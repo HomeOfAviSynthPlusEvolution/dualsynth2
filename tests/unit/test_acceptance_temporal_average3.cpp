@@ -3,13 +3,14 @@
 #include "temporal_average3.hpp"
 #include <dualsynth/mdspan.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 namespace {
 
-ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+ds::VideoFrameView make_const_gray8_frame(const std::uint8_t* data, int width, int height, std::ptrdiff_t stride) {
   return ds::VideoFrameView{
     ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
     1,
@@ -22,7 +23,7 @@ ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, 
   };
 }
 
-ds::MutableVideoFrameView make_mutable_gray8_frame(unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+ds::MutableVideoFrameView make_mutable_gray8_frame(std::uint8_t* data, int width, int height, std::ptrdiff_t stride) {
   return ds::MutableVideoFrameView{
     ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
     1,
@@ -154,10 +155,10 @@ TEST_CASE("AcceptanceTemporalAverage3 declares temporal requests before processi
 }
 
 TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
-  const std::array<unsigned char, 4> a_storage{10, 20, 30, 40};
-  const std::array<unsigned char, 4> b_storage{40, 50, 60, 70};
-  const std::array<unsigned char, 4> c_storage{70, 80, 90, 100};
-  std::array<unsigned char, 4> dst_storage{};
+  const std::array<std::uint8_t, 4> a_storage{10, 20, 30, 40};
+  const std::array<std::uint8_t, 4> b_storage{40, 50, 60, 70};
+  const std::array<std::uint8_t, 4> c_storage{70, 80, 90, 100};
+  std::array<std::uint8_t, 4> dst_storage{};
 
   FakeFrameProvider provider(
     make_const_gray8_frame(a_storage.data(), 2, 2, 2),
@@ -174,7 +175,7 @@ TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
   const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
 
   REQUIRE(result.has_value());
-  REQUIRE(dst_storage == std::array<unsigned char, 4>{40, 50, 60, 70});
+  REQUIRE(dst_storage == std::array<std::uint8_t, 4>{40, 50, 60, 70});
   REQUIRE(provider.request_count() == 3);
   REQUIRE(provider.requested_input(0) == 0);
   REQUIRE(provider.requested_frame(0) == 4);

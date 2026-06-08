@@ -5,6 +5,7 @@
 #include <dualsynth/video_filter.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 
@@ -21,9 +22,9 @@ void copy_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
 
 template <class T>
 constexpr T max_sample_value() {
-  if constexpr (std::is_same_v<T, unsigned char>) {
+  if constexpr (std::is_same_v<T, std::uint8_t>) {
     return 255;
-  } else if constexpr (std::is_same_v<T, unsigned short>) {
+  } else if constexpr (std::is_same_v<T, std::uint16_t>) {
     return 65535;
   } else {
     return T{1};
@@ -84,11 +85,11 @@ inline Result<RequestedVideoFrame> get_current_input_frame(VideoProcessContext& 
   return context.frames.get(0, context.output_frame);
 }
 
-inline bool dimensions_match(PlaneView2D<const unsigned char> src, PlaneView2D<unsigned char> dst) {
+inline bool dimensions_match(PlaneView2D<const std::uint8_t> src, PlaneView2D<std::uint8_t> dst) {
   return src.extent(1) == dst.extent(1) && src.extent(0) == dst.extent(0);
 }
 
-inline bool transposed_dimensions_match(PlaneView2D<const unsigned char> src, PlaneView2D<unsigned char> dst) {
+inline bool transposed_dimensions_match(PlaneView2D<const std::uint8_t> src, PlaneView2D<std::uint8_t> dst) {
   return src.extent(1) == dst.extent(0) && src.extent(0) == dst.extent(1);
 }
 
@@ -110,8 +111,8 @@ struct VideoIdentity {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<unsigned char>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<unsigned char>(context.dst.plane(0));
+    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoIdentity frame dimensions do not match output"}
@@ -141,8 +142,8 @@ struct VideoInvert {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<unsigned char>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<unsigned char>(context.dst.plane(0));
+    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoInvert frame dimensions do not match output"}
@@ -172,8 +173,8 @@ struct VideoTranspose {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<unsigned char>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<unsigned char>(context.dst.plane(0));
+    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
     if (!transposed_dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoTranspose frame dimensions do not match output"}

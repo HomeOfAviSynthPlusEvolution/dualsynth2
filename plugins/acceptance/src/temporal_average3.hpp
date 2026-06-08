@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace ds::acceptance {
@@ -28,10 +29,10 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
     }
   }
 
-  const auto a = as_plane_view<unsigned char>(frames[0].value().frame.plane(0));
-  const auto b = as_plane_view<unsigned char>(frames[1].value().frame.plane(0));
-  const auto c = as_plane_view<unsigned char>(frames[2].value().frame.plane(0));
-  const auto dst = as_plane_view<unsigned char>(context.dst.plane(0));
+  const auto a = as_plane_view<std::uint8_t>(frames[0].value().frame.plane(0));
+  const auto b = as_plane_view<std::uint8_t>(frames[1].value().frame.plane(0));
+  const auto c = as_plane_view<std::uint8_t>(frames[2].value().frame.plane(0));
+  const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
 
   if (a.extent(1) != dst.extent(1) ||
       b.extent(1) != dst.extent(1) ||
@@ -46,7 +47,7 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
 
   for (std::size_t y = 0; y < dst.extent(0); ++y) {
     for (std::size_t x = 0; x < dst.extent(1); ++x) {
-      dst[y, x] = static_cast<unsigned char>(
+      dst[y, x] = static_cast<std::uint8_t>(
         (static_cast<int>(a[y, x]) +
          static_cast<int>(b[y, x]) +
          static_cast<int>(c[y, x])) / 3

@@ -5,13 +5,14 @@
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 namespace {
 
-ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+ds::VideoFrameView make_const_gray8_frame(const std::uint8_t* data, int width, int height, std::ptrdiff_t stride) {
   return ds::VideoFrameView{
     ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
     1,
@@ -24,7 +25,7 @@ ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, 
   };
 }
 
-ds::MutableVideoFrameView make_mutable_gray8_frame(unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+ds::MutableVideoFrameView make_mutable_gray8_frame(std::uint8_t* data, int width, int height, std::ptrdiff_t stride) {
   return ds::MutableVideoFrameView{
     ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
     1,
@@ -67,8 +68,8 @@ private:
 } // namespace
 
 TEST_CASE("Reference video identity copies uint8 planes") {
-  const std::array<unsigned char, 4> src_storage{1, 2, 3, 4};
-  std::array<unsigned char, 4> dst_storage{};
+  const std::array<std::uint8_t, 4> src_storage{1, 2, 3, 4};
+  std::array<std::uint8_t, 4> dst_storage{};
 
   auto src = ds::make_plane_view(src_storage.data(), 2, 2, 2);
   auto dst = ds::make_plane_view(dst_storage.data(), 2, 2, 2);
@@ -79,25 +80,25 @@ TEST_CASE("Reference video identity copies uint8 planes") {
 }
 
 TEST_CASE("Reference video invert handles uint8 and uint16 ranges") {
-  const std::array<unsigned char, 4> u8_src{0, 1, 127, 255};
-  std::array<unsigned char, 4> u8_dst{};
+  const std::array<std::uint8_t, 4> u8_src{0, 1, 127, 255};
+  std::array<std::uint8_t, 4> u8_dst{};
 
   ds::reference::invert_plane(
     ds::make_plane_view(u8_src.data(), 4, 1, 4),
     ds::make_plane_view(u8_dst.data(), 4, 1, 4)
   );
 
-  REQUIRE(u8_dst == std::array<unsigned char, 4>{255, 254, 128, 0});
+  REQUIRE(u8_dst == std::array<std::uint8_t, 4>{255, 254, 128, 0});
 
-  const std::array<unsigned short, 3> u16_src{0, 1024, 65535};
-  std::array<unsigned short, 3> u16_dst{};
+  const std::array<std::uint16_t, 3> u16_src{0, 1024, 65535};
+  std::array<std::uint16_t, 3> u16_dst{};
 
   ds::reference::invert_plane(
-    ds::make_plane_view(u16_src.data(), 3, 1, 3 * sizeof(unsigned short)),
-    ds::make_plane_view(u16_dst.data(), 3, 1, 3 * sizeof(unsigned short))
+    ds::make_plane_view(u16_src.data(), 3, 1, 3 * sizeof(std::uint16_t)),
+    ds::make_plane_view(u16_dst.data(), 3, 1, 3 * sizeof(std::uint16_t))
   );
 
-  REQUIRE(u16_dst == std::array<unsigned short, 3>{65535, 64511, 0});
+  REQUIRE(u16_dst == std::array<std::uint16_t, 3>{65535, 64511, 0});
 }
 
 TEST_CASE("Reference video invert handles float normalized range") {
@@ -115,26 +116,26 @@ TEST_CASE("Reference video invert handles float normalized range") {
 }
 
 TEST_CASE("Reference video transpose swaps dimensions and double transpose restores data") {
-  const std::array<unsigned char, 6> src_storage{
+  const std::array<std::uint8_t, 6> src_storage{
     1, 2, 3,
     4, 5, 6
   };
-  std::array<unsigned char, 6> transposed_storage{};
-  std::array<unsigned char, 6> restored_storage{};
+  std::array<std::uint8_t, 6> transposed_storage{};
+  std::array<std::uint8_t, 6> restored_storage{};
 
   ds::reference::transpose_plane(
     ds::make_plane_view(src_storage.data(), 3, 2, 3),
     ds::make_plane_view(transposed_storage.data(), 2, 3, 2)
   );
 
-  REQUIRE(transposed_storage == std::array<unsigned char, 6>{
+  REQUIRE(transposed_storage == std::array<std::uint8_t, 6>{
     1, 4,
     2, 5,
     3, 6
   });
 
   ds::reference::transpose_plane(
-    ds::make_plane_view(static_cast<const unsigned char*>(transposed_storage.data()), 2, 3, 2),
+    ds::make_plane_view(static_cast<const std::uint8_t*>(transposed_storage.data()), 2, 3, 2),
     ds::make_plane_view(restored_storage.data(), 3, 2, 3)
   );
 
@@ -226,8 +227,8 @@ TEST_CASE("Video filter dispatch helper requests and processes through descripto
   REQUIRE(requests[0].input_index == 0);
   REQUIRE(requests[0].frame_number == 4);
 
-  const std::array<unsigned char, 4> src_storage{0, 10, 127, 255};
-  std::array<unsigned char, 4> dst_storage{};
+  const std::array<std::uint8_t, 4> src_storage{0, 10, 127, 255};
+  std::array<std::uint8_t, 4> dst_storage{};
   SingleFrameProvider provider(make_const_gray8_frame(src_storage.data(), 4, 1, 4));
 
   const auto process_result = ds::process_video_filter<ds::reference::VideoInvert>(
@@ -239,7 +240,7 @@ TEST_CASE("Video filter dispatch helper requests and processes through descripto
   REQUIRE(process_result.has_value());
   REQUIRE(provider.requested_input() == 0);
   REQUIRE(provider.requested_frame() == 4);
-  REQUIRE(dst_storage == std::array<unsigned char, 4>{255, 245, 128, 0});
+  REQUIRE(dst_storage == std::array<std::uint8_t, 4>{255, 245, 128, 0});
 }
 
 TEST_CASE("Video input info helper follows descriptor input count") {

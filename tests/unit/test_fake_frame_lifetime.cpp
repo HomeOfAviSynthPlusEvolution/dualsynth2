@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/frame.hpp>
 #include <array>
+#include <cstdint>
 
 TEST_CASE("FrameHandle releases through custom deleter") {
   int release_count = 0;
@@ -43,7 +44,7 @@ TEST_CASE("FrameHandle move transfers ownership") {
 }
 
 TEST_CASE("Video frame view exposes typed mdspan planes") {
-  std::array<unsigned short, 8> storage{
+  std::array<std::uint16_t, 8> storage{
     1, 2, 3, 99,
     4, 5, 6, 88
   };
@@ -52,14 +53,14 @@ TEST_CASE("Video frame view exposes typed mdspan planes") {
     ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt16, 1, 0, 0},
     1,
     std::array<ds::MutablePlaneView, 4>{
-      ds::MutablePlaneView{storage.data(), 4 * static_cast<std::ptrdiff_t>(sizeof(unsigned short)), 3, 2},
+      ds::MutablePlaneView{storage.data(), 4 * static_cast<std::ptrdiff_t>(sizeof(std::uint16_t)), 3, 2},
       ds::MutablePlaneView{},
       ds::MutablePlaneView{},
       ds::MutablePlaneView{}
     }
   };
 
-  auto plane = ds::as_plane_view<unsigned short>(frame.plane(0));
+  auto plane = ds::as_plane_view<std::uint16_t>(frame.plane(0));
 
   REQUIRE(plane.extent(0) == 2);
   REQUIRE(plane.extent(1) == 3);
