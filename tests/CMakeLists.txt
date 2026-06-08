@@ -41,4 +41,22 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/testpattern_info.vpy
       -
   )
+
+  add_test(
+    NAME vs_video_identity_process
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/video_identity_process.vpy
+      --
+  )
+
+  add_test(
+    NAME vs_video_invert_process
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/video_invert_process.vpy
+      --
+  )
 endif()
