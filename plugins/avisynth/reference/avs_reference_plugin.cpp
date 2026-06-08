@@ -8,6 +8,14 @@
 #include <span>
 #include <vector>
 
+#if defined(_WIN32)
+#define DS_AVS_PLUGIN_EXPORT extern "C" __declspec(dllexport)
+#elif defined(__clang__) || defined(__GNUC__)
+#define DS_AVS_PLUGIN_EXPORT extern "C" __attribute__((visibility("default")))
+#else
+#define DS_AVS_PLUGIN_EXPORT extern "C"
+#endif
+
 const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
@@ -245,7 +253,7 @@ AVSValue __cdecl create_audio_gain(AVSValue args, void*, IScriptEnvironment* env
 
 } // namespace
 
-extern "C" __declspec(dllexport) const char* __stdcall AvisynthPluginInit3(
+DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   IScriptEnvironment* env,
   const AVS_Linkage* const vectors
 ) {

@@ -13,6 +13,11 @@ endif()
 option(DS_BUILD_TESTS "Build DualSynth tests" ON)
 option(DS_BUILD_VAPOURSYNTH_REFERENCE "Build VapourSynth reference plugin" ON)
 option(DS_BUILD_AVISYNTH_REFERENCE "Build AviSynth+ reference plugin" ON)
+option(
+  DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_REFERENCE
+  "Allow building the unverified AviSynth+ reference plugin on Linux and macOS"
+  OFF
+)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DualSynthCompilerOptions)
@@ -61,7 +66,40 @@ if(DS_BUILD_VAPOURSYNTH_REFERENCE)
   endif()
 endif()
 
-if(DS_BUILD_AVISYNTH_REFERENCE AND WIN32 AND MSVC)
+set(DS_CAN_BUILD_AVISYNTH_REFERENCE OFF)
+set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "disabled")
+
+if(DS_BUILD_AVISYNTH_REFERENCE)
+  if(WIN32)
+    if(MSVC)
+      set(DS_CAN_BUILD_AVISYNTH_REFERENCE ON)
+      set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "windows-msvc-verified")
+    else()
+      set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "windows-non-msvc-unsupported")
+    endif()
+  elseif(APPLE)
+    set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "macos-unverified")
+    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_REFERENCE)
+      set(DS_CAN_BUILD_AVISYNTH_REFERENCE ON)
+    endif()
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "linux-unverified")
+    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_REFERENCE)
+      set(DS_CAN_BUILD_AVISYNTH_REFERENCE ON)
+    endif()
+  elseif(UNIX)
+    set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "posix-other-unverified")
+    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_REFERENCE)
+      set(DS_CAN_BUILD_AVISYNTH_REFERENCE ON)
+    endif()
+  else()
+    set(DS_AVISYNTH_REFERENCE_PLATFORM_STATUS "unsupported")
+  endif()
+
+  message(STATUS "AviSynth+ reference platform status: ${DS_AVISYNTH_REFERENCE_PLATFORM_STATUS}")
+endif()
+
+if(DS_BUILD_AVISYNTH_REFERENCE AND DS_CAN_BUILD_AVISYNTH_REFERENCE)
   FetchContent_Declare(
     AviSynthPlus
     URL https://github.com/AviSynth/AviSynthPlus/archive/refs/tags/v3.7.5.zip
