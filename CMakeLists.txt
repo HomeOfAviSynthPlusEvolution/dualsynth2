@@ -61,6 +61,39 @@ if(DS_BUILD_VAPOURSYNTH_REFERENCE)
   )
   unset(_ds_vapoursynth_include_hints)
 
+  if(NOT DS_VAPOURSYNTH_INCLUDE_DIR)
+    FetchContent_Declare(
+      VapourSynth
+      URL https://github.com/vapoursynth/vapoursynth/archive/refs/tags/R73.zip
+      URL_HASH SHA256=7c6b1eb2ec4aeae078675a29cf5e77c6ca1ab8b1dd322677c66e1ca6b76c511d
+    )
+    FetchContent_GetProperties(VapourSynth)
+    if(NOT vapoursynth_POPULATED)
+      if(POLICY CMP0169)
+        cmake_policy(PUSH)
+        cmake_policy(SET CMP0169 OLD)
+      endif()
+      FetchContent_Populate(VapourSynth)
+      if(POLICY CMP0169)
+        cmake_policy(POP)
+      endif()
+    endif()
+
+    set(_ds_vapoursynth_sdk_include_dir "${CMAKE_CURRENT_BINARY_DIR}/_deps/vapoursynth-sdk/include")
+    file(MAKE_DIRECTORY "${_ds_vapoursynth_sdk_include_dir}/vapoursynth")
+    configure_file(
+      "${vapoursynth_SOURCE_DIR}/include/VapourSynth4.h"
+      "${_ds_vapoursynth_sdk_include_dir}/vapoursynth/VapourSynth4.h"
+      COPYONLY
+    )
+    set(DS_VAPOURSYNTH_INCLUDE_DIR
+      "${_ds_vapoursynth_sdk_include_dir}"
+      CACHE PATH "Path to a directory containing vapoursynth/VapourSynth4.h"
+      FORCE
+    )
+    unset(_ds_vapoursynth_sdk_include_dir)
+  endif()
+
   if(DS_VAPOURSYNTH_INCLUDE_DIR)
     add_subdirectory(plugins/vapoursynth/reference)
   endif()
