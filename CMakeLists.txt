@@ -13,6 +13,7 @@ include(DualSynthCompilerOptions)
 
 add_library(dualsynth STATIC
   src/dualsynth/error.cpp
+  src/dualsynth/format.cpp
 )
 
 add_library(DualSynth::dualsynth ALIAS dualsynth)

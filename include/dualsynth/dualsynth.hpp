@@ -1,6 +1,8 @@
 #pragma once
 
 #include <dualsynth/error.hpp>
+#include <dualsynth/format.hpp>
+#include <dualsynth/media.hpp>
 
 namespace ds {
 constexpr int version_major = 0;
