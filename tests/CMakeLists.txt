@@ -37,6 +37,11 @@ if(DS_VAPOURSYNTH_INCLUDE_DIR)
   target_include_directories(dualsynth_unit_tests PRIVATE ${DS_VAPOURSYNTH_INCLUDE_DIR})
 endif()
 
+if(DS_AVISYNTH_INCLUDE_DIR)
+  target_sources(dualsynth_unit_tests PRIVATE unit/test_avisynth_video_bridge.cpp)
+  target_include_directories(dualsynth_unit_tests PRIVATE ${DS_AVISYNTH_INCLUDE_DIR})
+endif()
+
 include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
 

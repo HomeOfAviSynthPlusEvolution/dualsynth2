@@ -64,14 +64,16 @@ inline int pixel_type(VideoFormat format) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:
       return VideoInfo::CS_Y8;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_Y10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_Y12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_Y14;
     case SampleFormat::UInt16:
       return VideoInfo::CS_Y16;
     case SampleFormat::Float32:
       return VideoInfo::CS_Y32;
-    case SampleFormat::UInt10:
-    case SampleFormat::UInt12:
-    case SampleFormat::UInt14:
-      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -79,14 +81,16 @@ inline int pixel_type(VideoFormat format) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:
       return VideoInfo::CS_RGBP;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_RGBP10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_RGBP12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_RGBP14;
     case SampleFormat::UInt16:
       return VideoInfo::CS_RGBP16;
     case SampleFormat::Float32:
       return VideoInfo::CS_RGBPS;
-    case SampleFormat::UInt10:
-    case SampleFormat::UInt12:
-    case SampleFormat::UInt14:
-      return VideoInfo::CS_UNKNOWN;
     }
   }
 
