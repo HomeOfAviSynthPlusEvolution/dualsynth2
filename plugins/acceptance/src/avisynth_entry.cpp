@@ -6,7 +6,6 @@
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -23,52 +22,6 @@
 const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
-
-ds::VideoFormat gray8_format() {
-  return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
-}
-
-ds::VideoFrameView make_const_video_frame_view(const PVideoFrame& frame, const VideoInfo& vi) {
-  (void)vi;
-  return ds::avisynth::make_video_frame_view(frame, gray8_format());
-}
-
-class AVSFrameProvider final : public ds::VideoFrameProvider {
-public:
-  AVSFrameProvider(std::span<PClip> clips, IScriptEnvironment* env)
-    : clips_(clips),
-      env_(env) {}
-
-  ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
-    if (input_index < 0 || input_index >= static_cast<int>(clips_.size())) {
-      return ds::Result<ds::RequestedVideoFrame>::failure(
-        ds::Error{ds::ErrorCode::InvalidArgument, "Video input index is out of range"}
-      );
-    }
-
-    PVideoFrame frame = clips_[static_cast<std::size_t>(input_index)]->GetFrame(frame_number, env_);
-    const VideoInfo& vi = clips_[static_cast<std::size_t>(input_index)]->GetVideoInfo();
-    frames_.push_back(frame);
-    return ds::Result<ds::RequestedVideoFrame>::success(
-      ds::RequestedVideoFrame{
-        input_index,
-        frame_number,
-        make_const_video_frame_view(frame, vi)
-      }
-    );
-  }
-
-private:
-  std::span<PClip> clips_;
-  IScriptEnvironment* env_;
-  std::vector<PVideoFrame> frames_;
-};
-
-using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
-  int,
-  ds::VideoFrameProvider&,
-  ds::MutableVideoFrameView
-);
 
 void initialize_no_audio(VideoInfo& vi) {
   vi.audio_samples_per_second = 0;
@@ -133,76 +86,6 @@ public:
   }
 
 private:
-  VideoInfo vi_{};
-};
-
-template <std::size_t InputCount>
-class VideoFilter final : public IClip {
-public:
-  VideoFilter(
-    std::array<PClip, InputCount> clips,
-    ds::VideoOutputInfo output,
-    VideoProcessFn process,
-    ds::avisynth::MtMode mt_mode,
-    std::size_t parity_source_index,
-    bool forward_audio
-  ) : clips_(clips),
-      process_(process),
-      mt_mode_(mt_mode),
-      parity_source_index_(parity_source_index),
-      forward_audio_(forward_audio) {
-    vi_ = clips_[0]->GetVideoInfo();
-    vi_.width = output.width;
-    vi_.height = output.height;
-    vi_.num_frames = output.num_frames;
-    vi_.fps_numerator = static_cast<unsigned>(output.fps.numerator);
-    vi_.fps_denominator = static_cast<unsigned>(output.fps.denominator);
-    if (!forward_audio_) {
-      initialize_no_audio(vi_);
-    }
-  }
-
-  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame dst = env->NewVideoFrame(vi_);
-    AVSFrameProvider provider(clips_, env);
-    const auto result = process_(
-      n,
-      provider,
-      ds::avisynth::make_mutable_video_frame_view(dst, gray8_format())
-    );
-
-    if (!result.has_value()) {
-      env->ThrowError(result.error().message.c_str());
-    }
-
-    return dst;
-  }
-
-  bool __stdcall GetParity(int n) override {
-    return clips_[parity_source_index_]->GetParity(n);
-  }
-
-  void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) override {
-    if (!forward_audio_) {
-      env->ThrowError("DualSynth reference: video filter has no audio");
-    }
-    clips_[0]->GetAudio(buf, start, count, env);
-  }
-
-  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-    return ds::avisynth::cache_hint_response(cachehints, frame_range, mt_mode_);
-  }
-
-  const VideoInfo& __stdcall GetVideoInfo() override {
-    return vi_;
-  }
-
-private:
-  std::array<PClip, InputCount> clips_;
-  VideoProcessFn process_;
-  ds::avisynth::MtMode mt_mode_;
-  std::size_t parity_source_index_;
-  bool forward_audio_;
   VideoInfo vi_{};
 };
 
@@ -291,76 +174,16 @@ AVSValue __cdecl create_test_pattern(AVSValue args, void*, IScriptEnvironment* e
   return new TestPatternClip(width, height);
 }
 
-template <class Filter>
-AVSValue create_video_filter(
-  AVSValue args,
-  IScriptEnvironment* env,
-  const char* format_error,
-  ds::avisynth::MtMode mt_mode = ds::avisynth::MtMode::NiceFilter,
-  std::size_t parity_source_index = 0,
-  bool forward_audio = true
-) {
-  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
-  std::array<PClip, input_count> clips{};
-  std::array<ds::VideoInputInfo, input_count> input_infos{};
-
-  for (std::size_t i = 0; i < input_count; ++i) {
-    clips[i] = args[static_cast<int>(i)].AsClip();
-    const VideoInfo& vi = clips[i]->GetVideoInfo();
-    if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
-      env->ThrowError(format_error);
-    }
-    input_infos[i] = ds::VideoInputInfo{
-      vi.width,
-      vi.height,
-      vi.num_frames,
-      ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
-      ds::FrameRate{vi.fps_numerator, vi.fps_denominator}
-    };
-  }
-
-  const auto collected = ds::collect_video_input_infos<Filter>(input_infos);
-  if (!collected.has_value()) {
-    env->ThrowError(collected.error().message.c_str());
-  }
-
-  const auto init_result = ds::init_video_filter<Filter>(collected.value());
-  if (!init_result.has_value()) {
-    env->ThrowError(init_result.error().message.c_str());
-  }
-
-  return new VideoFilter<input_count>(
-    clips,
-    init_result.value().output,
-    ds::process_video_filter<Filter>,
-    mt_mode,
-    parity_source_index,
-    forward_audio
-  );
-}
-
-template <class Bridge>
-AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
-  return create_video_filter<typename Bridge::Core>(
-    args,
-    env,
-    Bridge::avs_format_error,
-    ds::avisynth::bridge_mt_mode<Bridge>(),
-    Bridge::parity_source_index,
-    Bridge::forward_audio
-  );
-}
-
 AVSValue __cdecl create_video_identity(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter_bridge<ds::reference::VideoIdentityBridge>(args, env);
+  return ds::avisynth::create_video_filter_bridge<ds::reference::VideoIdentityBridge>(args, env);
 }
 
 AVSValue __cdecl create_video_invert(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter_bridge<ds::reference::VideoInvertBridge>(args, env);
+  return ds::avisynth::create_video_filter_bridge<ds::reference::VideoInvertBridge>(args, env);
 }
 
 AVSValue __cdecl create_video_transpose(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter_bridge<ds::reference::VideoTransposeBridge>(args, env);
+  return ds::avisynth::create_video_filter_bridge<ds::reference::VideoTransposeBridge>(args, env);
 }
 
 AVSValue __cdecl create_audio_test_tone(AVSValue args, void*, IScriptEnvironment* env) {
@@ -383,7 +206,7 @@ AVSValue __cdecl create_audio_gain(AVSValue args, void*, IScriptEnvironment* env
 }
 
 AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(args, env);
+  return ds::avisynth::create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(args, env);
 }
 
 } // namespace

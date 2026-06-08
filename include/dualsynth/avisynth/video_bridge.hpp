@@ -5,16 +5,29 @@
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/param.hpp>
+#include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace ds::avisynth {
+
+template <class Filter>
+constexpr OutputOrigin filter_output_origin() {
+  if constexpr (requires { Filter::output_origin; }) {
+    return Filter::output_origin;
+  } else {
+    return OutputOrigin::fresh();
+  }
+}
 
 enum class MtMode {
   NiceFilter,
@@ -398,6 +411,248 @@ inline MutableVideoFrameView make_mutable_video_frame_view(
     };
   }
   return MutableVideoFrameView{format, format.plane_count, planes};
+}
+
+inline bool output_origin_matches(
+  OutputOrigin origin,
+  const VideoOutputInfo& output,
+  std::span<const VideoInputInfo> inputs
+) {
+  if (origin.kind == OutputOriginKind::Fresh) {
+    return true;
+  }
+  if (origin.input_index < 0 || static_cast<std::size_t>(origin.input_index) >= inputs.size()) {
+    return false;
+  }
+
+  const VideoInputInfo& input = inputs[static_cast<std::size_t>(origin.input_index)];
+  return input.width == output.width &&
+    input.height == output.height &&
+    input.format == output.format;
+}
+
+inline void copy_video_frame_pixels(
+  const PVideoFrame& src,
+  const PVideoFrame& dst,
+  VideoFormat format
+) {
+  for (int plane = 0; plane < format.plane_count; ++plane) {
+    const int host_plane = plane_id(format, plane);
+    const BYTE* src_ptr = src->GetReadPtr(host_plane);
+    BYTE* dst_ptr = dst->GetWritePtr(host_plane);
+    const int src_pitch = src->GetPitch(host_plane);
+    const int dst_pitch = dst->GetPitch(host_plane);
+    const int row_size = std::min(src->GetRowSize(host_plane), dst->GetRowSize(host_plane));
+    const int height = std::min(src->GetHeight(host_plane), dst->GetHeight(host_plane));
+
+    for (int y = 0; y < height; ++y) {
+      std::memcpy(
+        dst_ptr + static_cast<std::ptrdiff_t>(y) * dst_pitch,
+        src_ptr + static_cast<std::ptrdiff_t>(y) * src_pitch,
+        static_cast<std::size_t>(row_size)
+      );
+    }
+  }
+}
+
+template <std::size_t InputCount>
+class VideoFrameProvider final : public ds::VideoFrameProvider {
+public:
+  VideoFrameProvider(
+    std::span<PClip> clips,
+    std::span<const VideoInputInfo> input_infos,
+    IScriptEnvironment* env
+  ) : clips_(clips),
+      input_infos_(input_infos),
+      env_(env) {}
+
+  Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
+    if (input_index < 0 || input_index >= static_cast<int>(clips_.size())) {
+      return Result<RequestedVideoFrame>::failure(
+        Error{ErrorCode::InvalidArgument, "DualSynth: video input index is out of range"}
+      );
+    }
+
+    const auto index = static_cast<std::size_t>(input_index);
+    PVideoFrame frame = clips_[index]->GetFrame(frame_number, env_);
+    if (!frame) {
+      return Result<RequestedVideoFrame>::failure(
+        Error{ErrorCode::HostError, "DualSynth: AviSynth did not provide the requested frame"}
+      );
+    }
+
+    frames_.push_back(frame);
+    return Result<RequestedVideoFrame>::success(
+      RequestedVideoFrame{
+        input_index,
+        frame_number,
+        make_video_frame_view(frame, input_infos_[index].format)
+      }
+    );
+  }
+
+private:
+  std::span<PClip> clips_;
+  std::span<const VideoInputInfo> input_infos_;
+  IScriptEnvironment* env_;
+  std::vector<PVideoFrame> frames_;
+};
+
+inline void copy_audio_info(VideoInfo& dst, const VideoInfo& src) {
+  dst.audio_samples_per_second = src.audio_samples_per_second;
+  dst.sample_type = src.sample_type;
+  dst.num_audio_samples = src.num_audio_samples;
+  dst.nchannels = src.nchannels;
+}
+
+template <class Bridge>
+class VideoFilter final : public IClip {
+public:
+  using Filter = typename Bridge::Core;
+  static constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
+
+  VideoFilter(
+    std::array<PClip, input_count> clips,
+    std::array<VideoInputInfo, input_count> input_infos,
+    VideoOutputInfo output,
+    MtMode mt_mode,
+    std::size_t parity_source_index,
+    bool forward_audio
+  ) : clips_(std::move(clips)),
+      input_infos_(input_infos),
+      output_format_(output.format),
+      mt_mode_(mt_mode),
+      parity_source_index_(parity_source_index),
+      forward_audio_(forward_audio) {
+    vi_ = make_video_info(output);
+    if (forward_audio_) {
+      copy_audio_info(vi_, clips_[0]->GetVideoInfo());
+    }
+  }
+
+  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
+    PVideoFrame dst = new_output_frame(n, env);
+    VideoFrameProvider<input_count> provider(clips_, input_infos_, env);
+    const auto result = process_video_filter<Filter>(
+      n,
+      provider,
+      make_mutable_video_frame_view(dst, output_format_)
+    );
+
+    if (!result.has_value()) {
+      env->ThrowError(result.error().message.c_str());
+    }
+
+    return dst;
+  }
+
+  bool __stdcall GetParity(int n) override {
+    return clips_[parity_source_index_]->GetParity(n);
+  }
+
+  void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) override {
+    if (!forward_audio_) {
+      env->ThrowError("DualSynth: video filter has no audio");
+    }
+    clips_[0]->GetAudio(buf, start, count, env);
+  }
+
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+    return cache_hint_response(cachehints, frame_range, mt_mode_);
+  }
+
+  const VideoInfo& __stdcall GetVideoInfo() override {
+    return vi_;
+  }
+
+private:
+  PVideoFrame new_output_frame(int n, IScriptEnvironment* env) {
+    const OutputOrigin origin = filter_output_origin<Filter>();
+    if (origin.kind == OutputOriginKind::Fresh) {
+      return env->NewVideoFrame(vi_);
+    }
+
+    const auto origin_index = static_cast<std::size_t>(origin.input_index);
+    PVideoFrame src = clips_[origin_index]->GetFrame(n, env);
+    if (origin.kind == OutputOriginKind::TakeFromInput && env->MakeWritable(&src)) {
+      return src;
+    }
+
+    PVideoFrame dst = env->NewVideoFrame(vi_);
+    copy_video_frame_pixels(src, dst, output_format_);
+    return dst;
+  }
+
+  std::array<PClip, input_count> clips_;
+  std::array<VideoInputInfo, input_count> input_infos_;
+  VideoInfo vi_{};
+  VideoFormat output_format_;
+  MtMode mt_mode_;
+  std::size_t parity_source_index_;
+  bool forward_audio_;
+};
+
+template <class Bridge>
+bool accepts_video_format(VideoFormat format) {
+  if constexpr (requires { Bridge::accepts_video_format(format); }) {
+    return Bridge::accepts_video_format(format);
+  } else {
+    return true;
+  }
+}
+
+template <VideoBridge Bridge>
+AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
+  using Filter = typename Bridge::Core;
+  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
+
+  std::array<PClip, input_count> clips{};
+  std::array<VideoInputInfo, input_count> input_infos{};
+
+  for (std::size_t i = 0; i < input_count; ++i) {
+    clips[i] = args[static_cast<int>(i)].AsClip();
+    const VideoInfo& vi = clips[i]->GetVideoInfo();
+    const auto format = make_video_format(vi);
+    if (!vi.HasVideo() || !format.has_value() || !accepts_video_format<Bridge>(format.value())) {
+      env->ThrowError(Bridge::avs_format_error);
+    }
+
+    input_infos[i] = VideoInputInfo{
+      vi.width,
+      vi.height,
+      vi.num_frames,
+      format.value(),
+      FrameRate{vi.fps_numerator, vi.fps_denominator}
+    };
+  }
+
+  const auto collected = collect_video_input_infos<Filter>(input_infos);
+  if (!collected.has_value()) {
+    env->ThrowError(collected.error().message.c_str());
+  }
+
+  const auto init_result = init_video_filter<Filter>(collected.value());
+  if (!init_result.has_value()) {
+    env->ThrowError(init_result.error().message.c_str());
+  }
+
+  const VideoOutputInfo& output = init_result.value().output;
+  if (pixel_type(output.format) == VideoInfo::CS_UNKNOWN) {
+    env->ThrowError("DualSynth: unsupported AviSynth output format");
+  }
+
+  if (!output_origin_matches(filter_output_origin<Filter>(), output, input_infos)) {
+    env->ThrowError("DualSynth: output origin is incompatible with output video info");
+  }
+
+  return new VideoFilter<Bridge>(
+    std::move(clips),
+    input_infos,
+    output,
+    bridge_mt_mode<Bridge>(),
+    Bridge::parity_source_index,
+    Bridge::forward_audio
+  );
 }
 
 template <class Source>
