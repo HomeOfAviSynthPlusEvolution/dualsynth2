@@ -61,4 +61,41 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
   return Result<VideoProcessResult>::success(VideoProcessResult{});
 }
 
+struct AcceptanceTemporalAverage3 {
+  static constexpr const char* name = "AcceptanceTemporalAverage3";
+  static constexpr int input_count = 3;
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+
+  static Result<VideoInitResult> init(VideoInitContext& context) {
+    if (context.inputs.size() != input_count) {
+      return Result<VideoInitResult>::failure(
+        Error{ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 requires exactly three video inputs"}
+      );
+    }
+
+    const VideoInputInfo& output = context.inputs[1];
+    for (const VideoInputInfo& input : context.inputs) {
+      if (input.width != output.width ||
+          input.height != output.height ||
+          input.num_frames != output.num_frames) {
+        return Result<VideoInitResult>::failure(
+          Error{ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 inputs must have matching video info"}
+        );
+      }
+    }
+
+    return Result<VideoInitResult>::success(
+      VideoInitResult{VideoOutputInfo{output.width, output.height, output.num_frames}}
+    );
+  }
+
+  static Result<VideoRequestResult> request(VideoRequestContext& context) {
+    return temporal_average3_request(context);
+  }
+
+  static Result<VideoProcessResult> process(VideoProcessContext& context) {
+    return temporal_average3_process(context);
+  }
+};
+
 } // namespace ds::acceptance

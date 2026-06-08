@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/plane_span.hpp>
 
+#include <span>
 #include <vector>
 
 namespace ds {
@@ -11,6 +12,20 @@ struct VideoInputInfo {
   int width;
   int height;
   int num_frames;
+};
+
+struct VideoOutputInfo {
+  int width;
+  int height;
+  int num_frames;
+};
+
+struct VideoInitContext {
+  std::span<const VideoInputInfo> inputs;
+};
+
+struct VideoInitResult {
+  VideoOutputInfo output;
 };
 
 enum class OutputOriginKind {

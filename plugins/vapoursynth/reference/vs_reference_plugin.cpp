@@ -490,7 +490,7 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
   if (activation_reason == arInitial) {
     std::vector<ds::VideoFrameRequest> requests;
     ds::VideoRequestContext request_context{n, requests};
-    const auto result = ds::acceptance::temporal_average3_request(request_context);
+    const auto result = ds::acceptance::AcceptanceTemporalAverage3::request(request_context);
     if (!result.has_value()) {
       return nullptr;
     }
@@ -532,7 +532,7 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
     )
   };
 
-  const auto result = ds::acceptance::temporal_average3_process(context);
+  const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
   if (!result.has_value()) {
     vsapi->freeFrame(dst);
     return nullptr;
@@ -575,36 +575,37 @@ void VS_CC acceptance_temporal_average3_create(
     }
   }
 
-  const VSVideoInfo* info = vsapi->getVideoInfo(nodes[1]);
-  if (info->format.colorFamily != cfGray ||
-      info->format.sampleType != stInteger ||
-      info->format.bitsPerSample != 8) {
+  std::array<ds::VideoInputInfo, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_infos{};
+  for (std::size_t i = 0; i < nodes.size(); ++i) {
+    const VSVideoInfo* input_info = vsapi->getVideoInfo(nodes[i]);
+    if (input_info->format.colorFamily != cfGray ||
+        input_info->format.sampleType != stInteger ||
+        input_info->format.bitsPerSample != 8) {
+      for (VSNode* node : nodes) {
+        vsapi->freeNode(node);
+      }
+      vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video");
+      return;
+    }
+    input_infos[i] = ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames};
+  }
+
+  ds::VideoInitContext init_context{input_infos};
+  const auto init_result = ds::acceptance::AcceptanceTemporalAverage3::init(init_context);
+  if (!init_result.has_value()) {
     for (VSNode* node : nodes) {
       vsapi->freeNode(node);
     }
-    vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video");
+    vsapi->mapSetError(out, init_result.error().message.c_str());
     return;
-  }
-
-  for (VSNode* node : nodes) {
-    const VSVideoInfo* input_info = vsapi->getVideoInfo(node);
-    if (input_info->width != info->width ||
-        input_info->height != info->height ||
-        input_info->numFrames != info->numFrames ||
-        input_info->format.colorFamily != info->format.colorFamily ||
-        input_info->format.sampleType != info->format.sampleType ||
-        input_info->format.bitsPerSample != info->format.bitsPerSample) {
-      for (VSNode* free_node : nodes) {
-        vsapi->freeNode(free_node);
-      }
-      vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 inputs must have matching GRAY8 video info");
-      return;
-    }
   }
 
   auto* data = new AcceptanceTemporalAverage3Data();
   data->nodes = nodes;
-  data->video_info = *info;
+  data->video_info = *vsapi->getVideoInfo(nodes[1]);
+  data->video_info.width = init_result.value().output.width;
+  data->video_info.height = init_result.value().output.height;
+  data->video_info.numFrames = init_result.value().output.num_frames;
 
   std::array<VSFilterDependency, 3> dependencies{
     VSFilterDependency{nodes[0], rpStrictSpatial},
@@ -614,7 +615,7 @@ void VS_CC acceptance_temporal_average3_create(
 
   vsapi->createVideoFilter(
     out,
-    "AcceptanceTemporalAverage3",
+    ds::acceptance::AcceptanceTemporalAverage3::name,
     &data->video_info,
     acceptance_temporal_average3_get_frame,
     acceptance_temporal_average3_free,

@@ -1,6 +1,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/acceptance/temporal_average3.hpp>
+#include <string>
 #include <vector>
 
 namespace {
@@ -48,11 +49,44 @@ private:
 
 } // namespace
 
+TEST_CASE("AcceptanceTemporalAverage3 exposes descriptor metadata and initializes output info") {
+  std::vector<ds::VideoInputInfo> inputs{
+    ds::VideoInputInfo{640, 360, 12},
+    ds::VideoInputInfo{640, 360, 12},
+    ds::VideoInputInfo{640, 360, 12}
+  };
+  ds::VideoInitContext context{inputs};
+
+  const auto result = ds::acceptance::AcceptanceTemporalAverage3::init(context);
+
+  REQUIRE(std::string(ds::acceptance::AcceptanceTemporalAverage3::name) == "AcceptanceTemporalAverage3");
+  REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::input_count == 3);
+  REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::output_origin.kind == ds::OutputOriginKind::Fresh);
+  REQUIRE(result.has_value());
+  REQUIRE(result.value().output.width == 640);
+  REQUIRE(result.value().output.height == 360);
+  REQUIRE(result.value().output.num_frames == 12);
+}
+
+TEST_CASE("AcceptanceTemporalAverage3 rejects inputs with mismatched output info") {
+  std::vector<ds::VideoInputInfo> inputs{
+    ds::VideoInputInfo{640, 360, 12},
+    ds::VideoInputInfo{640, 360, 12},
+    ds::VideoInputInfo{320, 360, 12}
+  };
+  ds::VideoInitContext context{inputs};
+
+  const auto result = ds::acceptance::AcceptanceTemporalAverage3::init(context);
+
+  REQUIRE(!result.has_value());
+  REQUIRE(result.error().code == ds::ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("AcceptanceTemporalAverage3 declares temporal requests before processing") {
   std::vector<ds::VideoFrameRequest> requests;
   ds::VideoRequestContext context{5, requests};
 
-  const auto result = ds::acceptance::temporal_average3_request(context);
+  const auto result = ds::acceptance::AcceptanceTemporalAverage3::request(context);
 
   REQUIRE(result.has_value());
   REQUIRE(requests.size() == 3);
@@ -82,7 +116,7 @@ TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
     ds::PlaneSpan<unsigned char>(dst_storage.data(), 2, 2, 2)
   };
 
-  const auto result = ds::acceptance::temporal_average3_process(context);
+  const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
 
   REQUIRE(result.has_value());
   REQUIRE(dst_storage == std::array<unsigned char, 4>{40, 50, 60, 70});

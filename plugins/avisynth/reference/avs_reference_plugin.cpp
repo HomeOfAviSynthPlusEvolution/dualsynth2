@@ -258,7 +258,7 @@ public:
       )
     };
 
-    const auto result = ds::acceptance::temporal_average3_process(context);
+    const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
     if (!result.has_value()) {
       env->ThrowError(result.error().message.c_str());
     }
@@ -366,20 +366,20 @@ AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScri
     args[2].AsClip()
   };
 
-  const VideoInfo& vi = clips[1]->GetVideoInfo();
-  if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
-    env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video");
+  std::array<ds::VideoInputInfo, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_infos{};
+  for (std::size_t i = 0; i < clips.size(); ++i) {
+    const VideoInfo& input_vi = clips[i]->GetVideoInfo();
+    if (!input_vi.HasVideo() ||
+        !input_vi.IsColorSpace(VideoInfo::CS_Y8)) {
+      env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video");
+    }
+    input_infos[i] = ds::VideoInputInfo{input_vi.width, input_vi.height, input_vi.num_frames};
   }
 
-  for (const auto& clip : clips) {
-    const VideoInfo& input_vi = clip->GetVideoInfo();
-    if (!input_vi.HasVideo() ||
-        !input_vi.IsColorSpace(VideoInfo::CS_Y8) ||
-        input_vi.width != vi.width ||
-        input_vi.height != vi.height ||
-        input_vi.num_frames != vi.num_frames) {
-      env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 inputs must have matching Y8 video info");
-    }
+  ds::VideoInitContext init_context{input_infos};
+  const auto init_result = ds::acceptance::AcceptanceTemporalAverage3::init(init_context);
+  if (!init_result.has_value()) {
+    env->ThrowError(init_result.error().message.c_str());
   }
 
   return new AcceptanceTemporalAverage3Filter(clips);
