@@ -18,6 +18,7 @@ add_executable(dualsynth_unit_tests
   unit/test_acceptance_temporal_average3.cpp
   unit/test_reference_audio_filters.cpp
   unit/test_reference_video_filters.cpp
+  unit/test_neo_gradient_mask.cpp
 )
 
 target_link_libraries(dualsynth_unit_tests

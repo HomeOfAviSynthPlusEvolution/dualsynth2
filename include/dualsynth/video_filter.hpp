@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/param.hpp>
 
 #include <array>
 #include <cstddef>
@@ -38,6 +39,7 @@ struct VideoOutputInfo {
 
 struct VideoInitContext {
   std::span<const VideoInputInfo> inputs;
+  const ParamValues* params = nullptr;
 };
 
 struct VideoInitResult {
@@ -135,7 +137,13 @@ collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
-  VideoInitContext context{inputs};
+  VideoInitContext context{inputs, nullptr};
+  return Filter::init(context);
+}
+
+template <class Filter>
+Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
+  VideoInitContext context{inputs, &params};
   return Filter::init(context);
 }
 

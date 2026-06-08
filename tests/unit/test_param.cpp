@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/param.hpp>
+#include <vector>
 
 TEST_CASE("Parameter schema stores standard value defaults") {
   const ds::ParamSpec strength{
@@ -24,6 +25,30 @@ TEST_CASE("Parameter validation rejects empty names") {
   };
 
   const auto result = ds::validate_param_spec(spec);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().code == ds::ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("Parameter values read integers with defaults") {
+  ds::ParamValues values{
+    std::vector<ds::ParamEntry>{
+      ds::ParamEntry{"width", ds::ParamValue{1280}}
+    }
+  };
+
+  REQUIRE(values.get_int("width", 640).value() == 1280);
+  REQUIRE(values.get_int("height", 480).value() == 480);
+}
+
+TEST_CASE("Parameter values reject wrong integer types") {
+  ds::ParamValues values{
+    std::vector<ds::ParamEntry>{
+      ds::ParamEntry{"width", ds::ParamValue{1.0}}
+    }
+  };
+
+  const auto result = values.get_int("width", 640);
+
   REQUIRE_FALSE(result.has_value());
   REQUIRE(result.error().code == ds::ErrorCode::InvalidArgument);
 }

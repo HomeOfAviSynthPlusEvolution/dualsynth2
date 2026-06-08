@@ -27,6 +27,17 @@ struct ParamSpec {
   bool required;
 };
 
+struct ParamEntry {
+  std::string name;
+  ParamValue value;
+};
+
+struct ParamValues {
+  std::vector<ParamEntry> entries;
+
+  Result<int> get_int(const std::string& name, int default_value) const;
+};
+
 struct FilterDescriptor {
   std::string name;
   std::vector<ParamSpec> params;

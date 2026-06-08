@@ -2,6 +2,21 @@
 
 namespace ds {
 
+Result<int> ParamValues::get_int(const std::string& name, int default_value) const {
+  for (const auto& entry : entries) {
+    if (entry.name == name) {
+      if (const auto* value = std::get_if<int>(&entry.value.value)) {
+        return Result<int>::success(*value);
+      }
+      return Result<int>::failure({
+        ErrorCode::InvalidArgument,
+        "parameter '" + name + "' must be an integer"
+      });
+    }
+  }
+  return Result<int>::success(default_value);
+}
+
 Result<bool> validate_param_spec(const ParamSpec& spec) {
   if (spec.name.empty()) {
     return Result<bool>::failure({
