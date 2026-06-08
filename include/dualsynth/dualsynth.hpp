@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/global_lock.hpp>
 #include <dualsynth/media.hpp>
 #include <dualsynth/mdspan.hpp>
 #include <dualsynth/param.hpp>

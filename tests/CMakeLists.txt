@@ -14,6 +14,7 @@ add_executable(dualsynth_unit_tests
   unit/test_param.cpp
   unit/test_mdspan.cpp
   unit/test_video_bridge.cpp
+  unit/test_global_lock.cpp
   unit/test_vapoursynth_video_bridge.cpp
   unit/test_acceptance_copy_stamp.cpp
   unit/test_acceptance_temporal_average3.cpp
@@ -39,7 +40,11 @@ if(DS_VAPOURSYNTH_INCLUDE_DIR)
 endif()
 
 if(DS_AVISYNTH_INCLUDE_DIR)
-  target_sources(dualsynth_unit_tests PRIVATE unit/test_avisynth_video_bridge.cpp)
+  target_sources(dualsynth_unit_tests
+    PRIVATE
+      unit/test_avisynth_global_lock.cpp
+      unit/test_avisynth_video_bridge.cpp
+  )
   target_include_directories(dualsynth_unit_tests PRIVATE ${DS_AVISYNTH_INCLUDE_DIR})
 endif()
 
