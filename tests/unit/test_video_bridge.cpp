@@ -122,3 +122,39 @@ TEST_CASE("Requested frame provider returns a clear error for missing frames") {
   REQUIRE_FALSE(missing.has_value());
   REQUIRE(missing.error().code == ds::ErrorCode::InvalidArgument);
 }
+
+TEST_CASE("Output origin requests its source frame and rejects invalid inputs") {
+  const std::vector<ds::VideoInputInfo> inputs{
+    ds::VideoInputInfo{16, 9, 8},
+    ds::VideoInputInfo{16, 9, 8}
+  };
+  std::vector<ds::VideoFrameRequest> requests{
+    ds::VideoFrameRequest{1, 4}
+  };
+
+  const auto copy_result = ds::request_output_origin_frame(
+    ds::OutputOrigin::copy_from_input(1),
+    4,
+    inputs,
+    requests
+  );
+  const auto fresh_result = ds::request_output_origin_frame(
+    ds::OutputOrigin::fresh(),
+    4,
+    inputs,
+    requests
+  );
+  const auto invalid_result = ds::request_output_origin_frame(
+    ds::OutputOrigin::take_from_input(2),
+    4,
+    inputs,
+    requests
+  );
+
+  REQUIRE(copy_result.has_value());
+  REQUIRE(fresh_result.has_value());
+  REQUIRE(requests.size() == 1);
+  REQUIRE(requests[0] == ds::VideoFrameRequest{1, 4});
+  REQUIRE_FALSE(invalid_result.has_value());
+  REQUIRE(invalid_result.error().code == ds::ErrorCode::InvalidArgument);
+}

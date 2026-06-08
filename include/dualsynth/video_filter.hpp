@@ -157,6 +157,27 @@ private:
   std::span<const RequestedVideoFrame> frames_;
 };
 
+inline Result<VideoRequestResult> request_output_origin_frame(
+  OutputOrigin origin,
+  int output_frame,
+  std::span<const VideoInputInfo> inputs,
+  std::vector<VideoFrameRequest>& requests
+) {
+  if (origin.kind == OutputOriginKind::Fresh) {
+    return Result<VideoRequestResult>::success(VideoRequestResult{});
+  }
+
+  if (origin.input_index < 0 || static_cast<std::size_t>(origin.input_index) >= inputs.size()) {
+    return Result<VideoRequestResult>::failure(
+      Error{ErrorCode::InvalidArgument, "DualSynth: output origin input index is out of range"}
+    );
+  }
+
+  VideoRequestContext context{output_frame, requests, inputs};
+  context.request_frame(origin.input_index, output_frame);
+  return Result<VideoRequestResult>::success(VideoRequestResult{});
+}
+
 struct VideoProcessResult {};
 
 struct VideoProcessContext {
