@@ -13,6 +13,39 @@ struct VideoInputInfo {
   int num_frames;
 };
 
+enum class OutputOriginKind {
+  Fresh,
+  CopyFromInput,
+  TakeFromInput,
+};
+
+struct OutputOrigin {
+  OutputOriginKind kind = OutputOriginKind::Fresh;
+  int input_index = -1;
+
+  static constexpr OutputOrigin fresh() {
+    return OutputOrigin{OutputOriginKind::Fresh, -1};
+  }
+
+  static constexpr OutputOrigin copy_from_input(int index) {
+    return OutputOrigin{OutputOriginKind::CopyFromInput, index};
+  }
+
+  // Move-like output construction contract.
+  //
+  // The output starts with the contents of the selected input, and the filter
+  // promises it does not need that input as a separate immutable source during
+  // processing. This gives hosts a reuse opportunity: AviSynth+ may call
+  // MakeWritable() and mutate the returned frame when possible, while
+  // VapourSynth must still materialize a writable copy because source frames
+  // are immutable. This is an optimization contract, not an aliasing contract:
+  // filters must not depend on dst sharing storage with the input, and wrappers
+  // must preserve semantics even when reuse is impossible.
+  static constexpr OutputOrigin take_from_input(int index) {
+    return OutputOrigin{OutputOriginKind::TakeFromInput, index};
+  }
+};
+
 struct RequestedVideoFrame {
   int input_index;
   int frame_number;
