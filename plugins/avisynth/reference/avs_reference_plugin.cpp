@@ -1,7 +1,6 @@
 #include <avisynth.h>
 
 #include <dualsynth/acceptance/temporal_average3.hpp>
-#include <dualsynth/plane_span.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 
@@ -43,7 +42,7 @@ public:
       ds::RequestedVideoFrame{
         input_index,
         frame_number,
-        ds::PlaneSpan<const BYTE>(
+        ds::make_plane_view(
           frame->GetReadPtr(PLANAR_Y),
           vi.width,
           vi.height,
@@ -62,7 +61,7 @@ private:
 using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
   int,
   ds::VideoFrameProvider&,
-  ds::PlaneSpan<unsigned char>
+  ds::PlaneView2D<unsigned char>
 );
 
 void initialize_no_audio(VideoInfo& vi) {
@@ -157,7 +156,7 @@ public:
     const auto result = process_(
       n,
       provider,
-      ds::PlaneSpan<BYTE>(
+      ds::make_plane_view(
         dst->GetWritePtr(PLANAR_Y),
         vi_.width,
         vi_.height,

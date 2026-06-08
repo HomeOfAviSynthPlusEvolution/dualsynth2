@@ -26,7 +26,7 @@ using VideoRequestFn = ds::Result<ds::VideoRequestResult> (*)(
 using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
   int,
   ds::VideoFrameProvider&,
-  ds::PlaneSpan<unsigned char>
+  ds::PlaneView2D<unsigned char>
 );
 
 template <std::size_t InputCount>
@@ -78,7 +78,7 @@ public:
       ds::RequestedVideoFrame{
         input_index,
         frame_number,
-        ds::PlaneSpan<const unsigned char>(
+        ds::make_plane_view(
           vsapi_->getReadPtr(frame, 0),
           vsapi_->getFrameWidth(frame, 0),
           vsapi_->getFrameHeight(frame, 0),
@@ -231,7 +231,7 @@ const VSFrame* VS_CC video_filter_get_frame(
   const auto result = data->process(
     n,
     provider,
-    ds::PlaneSpan<unsigned char>(
+    ds::make_plane_view(
       vsapi->getWritePtr(dst, 0),
       vsapi->getFrameWidth(dst, 0),
       vsapi->getFrameHeight(dst, 0),

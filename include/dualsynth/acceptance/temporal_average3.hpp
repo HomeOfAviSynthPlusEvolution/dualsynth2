@@ -32,28 +32,23 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
   const auto& b = frames[1].value().plane;
   const auto& c = frames[2].value().plane;
 
-  if (a.width() != context.dst.width() ||
-      b.width() != context.dst.width() ||
-      c.width() != context.dst.width() ||
-      a.height() != context.dst.height() ||
-      b.height() != context.dst.height() ||
-      c.height() != context.dst.height()) {
+  if (a.extent(1) != context.dst.extent(1) ||
+      b.extent(1) != context.dst.extent(1) ||
+      c.extent(1) != context.dst.extent(1) ||
+      a.extent(0) != context.dst.extent(0) ||
+      b.extent(0) != context.dst.extent(0) ||
+      c.extent(0) != context.dst.extent(0)) {
     return Result<VideoProcessResult>::failure(
       Error{ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 frame dimensions do not match output"}
     );
   }
 
-  for (int y = 0; y < context.dst.height(); ++y) {
-    const auto a_row = a.row(y);
-    const auto b_row = b.row(y);
-    const auto c_row = c.row(y);
-    const auto dst_row = context.dst.row(y);
-    for (int x = 0; x < context.dst.width(); ++x) {
-      const auto index = static_cast<std::size_t>(x);
-      dst_row[index] = static_cast<unsigned char>(
-        (static_cast<int>(a_row[index]) +
-         static_cast<int>(b_row[index]) +
-         static_cast<int>(c_row[index])) / 3
+  for (std::size_t y = 0; y < context.dst.extent(0); ++y) {
+    for (std::size_t x = 0; x < context.dst.extent(1); ++x) {
+      context.dst[y, x] = static_cast<unsigned char>(
+        (static_cast<int>(a[y, x]) +
+         static_cast<int>(b[y, x]) +
+         static_cast<int>(c[y, x])) / 3
       );
     }
   }

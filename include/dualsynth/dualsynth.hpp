@@ -5,8 +5,8 @@
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/media.hpp>
+#include <dualsynth/mdspan.hpp>
 #include <dualsynth/param.hpp>
-#include <dualsynth/plane_span.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 #include <dualsynth/video_filter.hpp>

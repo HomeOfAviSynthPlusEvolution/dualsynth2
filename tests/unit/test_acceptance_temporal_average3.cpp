@@ -1,6 +1,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/acceptance/temporal_average3.hpp>
+#include <dualsynth/mdspan.hpp>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -10,9 +11,9 @@ namespace {
 class FakeFrameProvider final : public ds::VideoFrameProvider {
 public:
   FakeFrameProvider(
-    ds::PlaneSpan<const unsigned char> a,
-    ds::PlaneSpan<const unsigned char> b,
-    ds::PlaneSpan<const unsigned char> c
+    ds::PlaneView2D<const unsigned char> a,
+    ds::PlaneView2D<const unsigned char> b,
+    ds::PlaneView2D<const unsigned char> c
   ) : frames_{a, b, c} {}
 
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
@@ -42,7 +43,7 @@ public:
   }
 
 private:
-  std::array<ds::PlaneSpan<const unsigned char>, 3> frames_;
+  std::array<ds::PlaneView2D<const unsigned char>, 3> frames_;
   std::array<int, 3> requested_inputs_{};
   std::array<int, 3> requested_frames_{};
   int request_count_ = 0;
@@ -132,15 +133,15 @@ TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
   std::array<unsigned char, 4> dst_storage{};
 
   FakeFrameProvider provider(
-    ds::PlaneSpan<const unsigned char>(a_storage.data(), 2, 2, 2),
-    ds::PlaneSpan<const unsigned char>(b_storage.data(), 2, 2, 2),
-    ds::PlaneSpan<const unsigned char>(c_storage.data(), 2, 2, 2)
+    ds::make_plane_view(a_storage.data(), 2, 2, 2),
+    ds::make_plane_view(b_storage.data(), 2, 2, 2),
+    ds::make_plane_view(c_storage.data(), 2, 2, 2)
   );
 
   ds::VideoProcessContext context{
     5,
     provider,
-    ds::PlaneSpan<unsigned char>(dst_storage.data(), 2, 2, 2)
+    ds::make_plane_view(dst_storage.data(), 2, 2, 2)
   };
 
   const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);

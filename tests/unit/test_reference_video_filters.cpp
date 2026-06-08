@@ -12,7 +12,7 @@ namespace {
 
 class SingleFrameProvider final : public ds::VideoFrameProvider {
 public:
-  explicit SingleFrameProvider(ds::PlaneSpan<const unsigned char> src)
+  explicit SingleFrameProvider(ds::PlaneView2D<const unsigned char> src)
     : src_(src) {}
 
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
@@ -32,7 +32,7 @@ public:
   }
 
 private:
-  ds::PlaneSpan<const unsigned char> src_;
+  ds::PlaneView2D<const unsigned char> src_;
   int requested_input_ = -1;
   int requested_frame_ = -1;
 };
@@ -201,12 +201,12 @@ TEST_CASE("Video filter dispatch helper requests and processes through descripto
 
   const std::array<unsigned char, 4> src_storage{0, 10, 127, 255};
   std::array<unsigned char, 4> dst_storage{};
-  SingleFrameProvider provider(ds::PlaneSpan<const unsigned char>(src_storage.data(), 4, 1, 4));
+  SingleFrameProvider provider(ds::make_plane_view(src_storage.data(), 4, 1, 4));
 
   const auto process_result = ds::process_video_filter<ds::reference::VideoInvert>(
     4,
     provider,
-    ds::PlaneSpan<unsigned char>(dst_storage.data(), 4, 1, 4)
+    ds::make_plane_view(dst_storage.data(), 4, 1, 4)
   );
 
   REQUIRE(process_result.has_value());

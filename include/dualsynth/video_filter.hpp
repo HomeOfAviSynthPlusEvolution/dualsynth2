@@ -2,7 +2,7 @@
 
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
-#include <dualsynth/plane_span.hpp>
+#include <dualsynth/mdspan.hpp>
 
 #include <array>
 #include <cstddef>
@@ -80,7 +80,7 @@ struct OutputOrigin {
 struct RequestedVideoFrame {
   int input_index;
   int frame_number;
-  PlaneSpan<const unsigned char> plane;
+  PlaneView2D<const unsigned char> plane;
 };
 
 struct VideoFrameRequest {
@@ -110,7 +110,7 @@ struct VideoProcessResult {};
 struct VideoProcessContext {
   int output_frame;
   VideoFrameProvider& frames;
-  PlaneSpan<unsigned char> dst;
+  PlaneView2D<unsigned char> dst;
 };
 
 template <class Filter>
@@ -152,7 +152,7 @@ template <class Filter>
 Result<VideoProcessResult> process_video_filter(
   int output_frame,
   VideoFrameProvider& frames,
-  PlaneSpan<unsigned char> dst
+  PlaneView2D<unsigned char> dst
 ) {
   VideoProcessContext context{output_frame, frames, dst};
   return Filter::process(context);

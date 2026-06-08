@@ -1,7 +1,6 @@
 #pragma once
 
 #include <dualsynth/mdspan.hpp>
-#include <dualsynth/plane_span.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
 
@@ -10,16 +9,6 @@
 #include <type_traits>
 
 namespace ds::reference {
-
-template <class T>
-PlaneView2D<T> plane_view_from_span(PlaneSpan<T> plane) {
-  return make_plane_view(
-    plane.row(0).data(),
-    plane.width(),
-    plane.height(),
-    plane.stride_bytes()
-  );
-}
 
 template <class T>
 void copy_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
@@ -121,8 +110,8 @@ struct VideoIdentity {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = plane_view_from_span(frame.value().plane);
-    const auto dst = plane_view_from_span(context.dst);
+    const auto src = frame.value().plane;
+    const auto dst = context.dst;
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoIdentity frame dimensions do not match output"}
@@ -152,8 +141,8 @@ struct VideoInvert {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = plane_view_from_span(frame.value().plane);
-    const auto dst = plane_view_from_span(context.dst);
+    const auto src = frame.value().plane;
+    const auto dst = context.dst;
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoInvert frame dimensions do not match output"}
@@ -183,8 +172,8 @@ struct VideoTranspose {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = plane_view_from_span(frame.value().plane);
-    const auto dst = plane_view_from_span(context.dst);
+    const auto src = frame.value().plane;
+    const auto dst = context.dst;
     if (!transposed_dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoTranspose frame dimensions do not match output"}
