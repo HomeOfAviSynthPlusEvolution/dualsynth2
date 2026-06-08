@@ -8,6 +8,13 @@
 
 namespace ds::acceptance {
 
+inline Result<VideoRequestResult> temporal_average3_request(VideoRequestContext& context) {
+  context.request_frame(0, context.output_frame - 1);
+  context.request_frame(1, context.output_frame);
+  context.request_frame(2, context.output_frame + 1);
+  return Result<VideoRequestResult>::success(VideoRequestResult{});
+}
+
 inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext& context) {
   std::array<Result<RequestedVideoFrame>, 3> frames{
     context.frames.get(0, context.output_frame - 1),

@@ -488,9 +488,23 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
   auto* data = static_cast<AcceptanceTemporalAverage3Data*>(instance_data);
 
   if (activation_reason == arInitial) {
-    vsapi->requestFrameFilter(n - 1, data->nodes[0], frame_ctx);
-    vsapi->requestFrameFilter(n, data->nodes[1], frame_ctx);
-    vsapi->requestFrameFilter(n + 1, data->nodes[2], frame_ctx);
+    std::vector<ds::VideoFrameRequest> requests;
+    ds::VideoRequestContext request_context{n, requests};
+    const auto result = ds::acceptance::temporal_average3_request(request_context);
+    if (!result.has_value()) {
+      return nullptr;
+    }
+
+    for (const auto& request : requests) {
+      if (request.input_index < 0 || request.input_index >= static_cast<int>(data->nodes.size())) {
+        return nullptr;
+      }
+      vsapi->requestFrameFilter(
+        request.frame_number,
+        data->nodes[static_cast<std::size_t>(request.input_index)],
+        frame_ctx
+      );
+    }
     return nullptr;
   }
 

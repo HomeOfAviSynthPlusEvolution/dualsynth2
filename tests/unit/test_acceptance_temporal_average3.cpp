@@ -1,6 +1,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/acceptance/temporal_average3.hpp>
+#include <vector>
 
 namespace {
 
@@ -46,6 +47,22 @@ private:
 };
 
 } // namespace
+
+TEST_CASE("AcceptanceTemporalAverage3 declares temporal requests before processing") {
+  std::vector<ds::VideoFrameRequest> requests;
+  ds::VideoRequestContext context{5, requests};
+
+  const auto result = ds::acceptance::temporal_average3_request(context);
+
+  REQUIRE(result.has_value());
+  REQUIRE(requests.size() == 3);
+  REQUIRE(requests[0].input_index == 0);
+  REQUIRE(requests[0].frame_number == 4);
+  REQUIRE(requests[1].input_index == 1);
+  REQUIRE(requests[1].frame_number == 5);
+  REQUIRE(requests[2].input_index == 2);
+  REQUIRE(requests[2].frame_number == 6);
+}
 
 TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
   const std::array<unsigned char, 4> a_storage{10, 20, 30, 40};
