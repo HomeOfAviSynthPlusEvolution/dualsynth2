@@ -27,7 +27,7 @@ target_link_libraries(dualsynth_unit_tests
     Catch2::Catch2WithMain
 )
 
-target_compile_features(dualsynth_unit_tests PRIVATE cxx_std_20)
+target_compile_features(dualsynth_unit_tests PRIVATE cxx_std_23)
 ds_apply_compiler_options(dualsynth_unit_tests)
 
 include(Catch)

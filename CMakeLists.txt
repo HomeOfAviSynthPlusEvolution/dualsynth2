@@ -32,7 +32,7 @@ add_library(dualsynth STATIC
 
 add_library(DualSynth::dualsynth ALIAS dualsynth)
 
-target_compile_features(dualsynth PUBLIC cxx_std_20)
+target_compile_features(dualsynth PUBLIC cxx_std_23)
 target_include_directories(dualsynth
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -1,6 +1,18 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/mdspan.hpp>
 #include <array>
+#include <mdspan>
+#include <type_traits>
+
+TEST_CASE("PlaneView2D is a standard mdspan stride view") {
+  using Expected = std::mdspan<
+    unsigned short,
+    std::dextents<std::size_t, 2>,
+    std::layout_stride
+  >;
+
+  STATIC_REQUIRE(std::is_same_v<ds::PlaneView2D<unsigned short>, Expected>);
+}
 
 TEST_CASE("PlaneView2D indexes stride-backed mutable planes") {
   std::array<unsigned short, 8> storage{
@@ -12,11 +24,11 @@ TEST_CASE("PlaneView2D indexes stride-backed mutable planes") {
 
   REQUIRE(view.extent(0) == 2);
   REQUIRE(view.extent(1) == 3);
-  REQUIRE(view(0, 0) == 1);
-  REQUIRE(view(0, 2) == 3);
-  REQUIRE(view(1, 0) == 4);
+  REQUIRE(view[0, 0] == 1);
+  REQUIRE(view[0, 2] == 3);
+  REQUIRE(view[1, 0] == 4);
 
-  view(1, 2) = 42;
+  view[1, 2] = 42;
 
   REQUIRE(storage[6] == 42);
   REQUIRE(storage[7] == 88);
@@ -32,6 +44,6 @@ TEST_CASE("PlaneView2D supports const sample views") {
 
   REQUIRE(view.extent(0) == 2);
   REQUIRE(view.extent(1) == 2);
-  REQUIRE(view(0, 1) == 11);
-  REQUIRE(view(1, 0) == 20);
+  REQUIRE(view[0, 1] == 11);
+  REQUIRE(view[1, 0] == 20);
 }
