@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <span>
 #include <string>
 #include <utility>
@@ -531,19 +532,29 @@ public:
   }
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame dst = new_output_frame(n, env);
-    VideoFrameProvider<input_count> provider(clips_, input_infos_, env);
-    const auto result = process_video_filter<Filter>(
-      n,
-      provider,
-      make_mutable_video_frame_view(dst, output_format_)
-    );
+    try {
+      PVideoFrame dst = new_output_frame(n, env);
+      VideoFrameProvider<input_count> provider(clips_, input_infos_, env);
+      const auto result = process_video_filter<Filter>(
+        n,
+        provider,
+        make_mutable_video_frame_view(dst, output_format_)
+      );
 
-    if (!result.has_value()) {
-      env->ThrowError(result.error().message.c_str());
+      if (!result.has_value()) {
+        env->ThrowError(result.error().message.c_str());
+      }
+
+      return dst;
+    } catch (const AvisynthError&) {
+      throw;
+    } catch (const std::exception& error) {
+      env->ThrowError(error.what());
+    } catch (...) {
+      env->ThrowError("DualSynth: unhandled exception in AviSynth video wrapper");
     }
 
-    return dst;
+    return {};
   }
 
   bool __stdcall GetParity(int n) override {
@@ -551,10 +562,18 @@ public:
   }
 
   void __stdcall GetAudio(void* buf, int64_t start, int64_t count, IScriptEnvironment* env) override {
-    if (!forward_audio_) {
-      env->ThrowError("DualSynth: video filter has no audio");
+    try {
+      if (!forward_audio_) {
+        env->ThrowError("DualSynth: video filter has no audio");
+      }
+      clips_[0]->GetAudio(buf, start, count, env);
+    } catch (const AvisynthError&) {
+      throw;
+    } catch (const std::exception& error) {
+      env->ThrowError(error.what());
+    } catch (...) {
+      env->ThrowError("DualSynth: unhandled exception in AviSynth video audio forwarding");
     }
-    clips_[0]->GetAudio(buf, start, count, env);
   }
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
@@ -606,53 +625,63 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
   using Filter = typename Bridge::Core;
   constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
 
-  std::array<PClip, input_count> clips{};
-  std::array<VideoInputInfo, input_count> input_infos{};
+  try {
+    std::array<PClip, input_count> clips{};
+    std::array<VideoInputInfo, input_count> input_infos{};
 
-  for (std::size_t i = 0; i < input_count; ++i) {
-    clips[i] = args[static_cast<int>(i)].AsClip();
-    const VideoInfo& vi = clips[i]->GetVideoInfo();
-    const auto format = make_video_format(vi);
-    if (!vi.HasVideo() || !format.has_value() || !accepts_video_format<Bridge>(format.value())) {
-      env->ThrowError(Bridge::avs_format_error);
+    for (std::size_t i = 0; i < input_count; ++i) {
+      clips[i] = args[static_cast<int>(i)].AsClip();
+      const VideoInfo& vi = clips[i]->GetVideoInfo();
+      const auto format = make_video_format(vi);
+      if (!vi.HasVideo() || !format.has_value() || !accepts_video_format<Bridge>(format.value())) {
+        env->ThrowError(Bridge::avs_format_error);
+      }
+
+      input_infos[i] = VideoInputInfo{
+        vi.width,
+        vi.height,
+        vi.num_frames,
+        format.value(),
+        FrameRate{vi.fps_numerator, vi.fps_denominator}
+      };
     }
 
-    input_infos[i] = VideoInputInfo{
-      vi.width,
-      vi.height,
-      vi.num_frames,
-      format.value(),
-      FrameRate{vi.fps_numerator, vi.fps_denominator}
-    };
+    const auto collected = collect_video_input_infos<Filter>(input_infos);
+    if (!collected.has_value()) {
+      env->ThrowError(collected.error().message.c_str());
+    }
+
+    const auto init_result = init_video_filter<Filter>(collected.value());
+    if (!init_result.has_value()) {
+      env->ThrowError(init_result.error().message.c_str());
+    }
+
+    const VideoOutputInfo& output = init_result.value().output;
+    if (pixel_type(output.format) == VideoInfo::CS_UNKNOWN) {
+      env->ThrowError("DualSynth: unsupported AviSynth output format");
+    }
+
+    if (!output_origin_matches(filter_output_origin<Filter>(), output, input_infos)) {
+      env->ThrowError("DualSynth: output origin is incompatible with output video info");
+    }
+
+    return new VideoFilter<Bridge>(
+      std::move(clips),
+      input_infos,
+      output,
+      bridge_mt_mode<Bridge>(),
+      Bridge::parity_source_index,
+      Bridge::forward_audio
+    );
+  } catch (const AvisynthError&) {
+    throw;
+  } catch (const std::exception& error) {
+    env->ThrowError(error.what());
+  } catch (...) {
+    env->ThrowError("DualSynth: unhandled exception in AviSynth video creation");
   }
 
-  const auto collected = collect_video_input_infos<Filter>(input_infos);
-  if (!collected.has_value()) {
-    env->ThrowError(collected.error().message.c_str());
-  }
-
-  const auto init_result = init_video_filter<Filter>(collected.value());
-  if (!init_result.has_value()) {
-    env->ThrowError(init_result.error().message.c_str());
-  }
-
-  const VideoOutputInfo& output = init_result.value().output;
-  if (pixel_type(output.format) == VideoInfo::CS_UNKNOWN) {
-    env->ThrowError("DualSynth: unsupported AviSynth output format");
-  }
-
-  if (!output_origin_matches(filter_output_origin<Filter>(), output, input_infos)) {
-    env->ThrowError("DualSynth: output origin is incompatible with output video info");
-  }
-
-  return new VideoFilter<Bridge>(
-    std::move(clips),
-    input_infos,
-    output,
-    bridge_mt_mode<Bridge>(),
-    Bridge::parity_source_index,
-    Bridge::forward_audio
-  );
+  return {};
 }
 
 template <class Source>
