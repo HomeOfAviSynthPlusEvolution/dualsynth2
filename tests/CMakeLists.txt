@@ -14,6 +14,7 @@ add_executable(dualsynth_unit_tests
   unit/test_param.cpp
   unit/test_plane_span.cpp
   unit/test_video_bridge.cpp
+  unit/test_vapoursynth_video_bridge.cpp
   unit/test_acceptance_temporal_average3.cpp
   unit/test_reference_audio_filters.cpp
   unit/test_reference_video_filters.cpp

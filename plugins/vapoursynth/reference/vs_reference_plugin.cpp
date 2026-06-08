@@ -3,6 +3,7 @@
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
+#include <dualsynth/vapoursynth/video_bridge.hpp>
 
 #include <algorithm>
 #include <array>
@@ -349,48 +350,45 @@ void create_video_filter(
   );
 }
 
-template <class Bridge>
-void create_video_filter_bridge(
-  const VSMap* in,
-  VSMap* out,
-  VSCore* core,
-  const VSAPI* vsapi
-) {
-  create_video_filter<typename Bridge::Core>(
-    in,
-    out,
-    core,
-    vsapi,
-    Bridge::vs_input_names,
-    Bridge::missing_input_error,
-    Bridge::vs_format_error
-  );
-}
+struct VSVideoFilterCreator {
+  const VSMap* in = nullptr;
+  VSMap* out = nullptr;
+  VSCore* core = nullptr;
+  const VSAPI* vsapi = nullptr;
+
+  template <class Filter>
+  void operator()(
+    const std::array<const char*, static_cast<std::size_t>(Filter::input_count)>& input_names,
+    const char* missing_error,
+    const char* format_error
+  ) const {
+    create_video_filter<Filter>(
+      in,
+      out,
+      core,
+      vsapi,
+      input_names,
+      missing_error,
+      format_error
+    );
+  }
+};
 
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter_bridge<ds::reference::VideoIdentityBridge>(
-    in,
-    out,
-    core,
-    vsapi
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoIdentityBridge>(
+    VSVideoFilterCreator{in, out, core, vsapi}
   );
 }
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter_bridge<ds::reference::VideoInvertBridge>(
-    in,
-    out,
-    core,
-    vsapi
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoInvertBridge>(
+    VSVideoFilterCreator{in, out, core, vsapi}
   );
 }
 
 void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter_bridge<ds::reference::VideoTransposeBridge>(
-    in,
-    out,
-    core,
-    vsapi
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoTransposeBridge>(
+    VSVideoFilterCreator{in, out, core, vsapi}
   );
 }
 
@@ -563,11 +561,8 @@ void VS_CC acceptance_temporal_average3_create(
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(
-    in,
-    out,
-    core,
-    vsapi
+  ds::vapoursynth::create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(
+    VSVideoFilterCreator{in, out, core, vsapi}
   );
 }
 
