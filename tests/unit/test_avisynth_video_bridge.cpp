@@ -3,6 +3,65 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstdint>
+#include <map>
+#include <string>
+#include <variant>
+#include <vector>
+
+namespace {
+
+struct FakeAvisynthSource {
+  using Scalar = std::variant<std::int64_t, double, bool, std::string>;
+
+  std::map<int, Scalar> scalars;
+  std::map<int, std::vector<std::int64_t>> int_arrays;
+  std::map<int, std::vector<double>> float_arrays;
+  std::map<int, std::vector<bool>> bool_arrays;
+  std::map<int, std::vector<std::string>> string_arrays;
+
+  bool defined(int index) const {
+    return scalars.contains(index) ||
+      int_arrays.contains(index) ||
+      float_arrays.contains(index) ||
+      bool_arrays.contains(index) ||
+      string_arrays.contains(index);
+  }
+
+  std::int64_t as_int(int index) const {
+    return std::get<std::int64_t>(scalars.at(index));
+  }
+
+  double as_float(int index) const {
+    return std::get<double>(scalars.at(index));
+  }
+
+  bool as_bool(int index) const {
+    return std::get<bool>(scalars.at(index));
+  }
+
+  std::string as_string(int index) const {
+    return std::get<std::string>(scalars.at(index));
+  }
+
+  std::vector<std::int64_t> as_int_array(int index) const {
+    return int_arrays.at(index);
+  }
+
+  std::vector<double> as_float_array(int index) const {
+    return float_arrays.at(index);
+  }
+
+  std::vector<bool> as_bool_array(int index) const {
+    return bool_arrays.at(index);
+  }
+
+  std::vector<std::string> as_string_array(int index) const {
+    return string_arrays.at(index);
+  }
+};
+
+} // namespace
 
 TEST_CASE("AviSynth video bridge maps middle bit-depth planar formats") {
   REQUIRE(ds::avisynth::pixel_type(
@@ -68,6 +127,41 @@ TEST_CASE("AviSynth video bridge maps YUV 420 422 and 444 planar formats") {
       }
     ) == item.pixel_type);
   }
+}
+
+TEST_CASE("AviSynth parameter reader converts positional host arguments using descriptor metadata") {
+  const ds::FilterDescriptor descriptor{
+    "Sample",
+    std::vector<ds::ParamSpec>{
+      ds::ParamSpec{"clip", ds::ParamType::Clip, ds::ParamValue{}, true},
+      ds::ParamSpec{"sigma", ds::ParamType::Float, ds::ParamValue{1.0}, false},
+      ds::ParamSpec{"planes", ds::ParamType::Integer, ds::ParamValue{std::vector<std::int64_t>{}}, false, true},
+      ds::ParamSpec{"enabled", ds::ParamType::Boolean, ds::ParamValue{false}, false},
+      ds::ParamSpec{"vs_only", ds::ParamType::Integer, ds::ParamValue{0}, false, false, true, false}
+    }
+  };
+  FakeAvisynthSource source{
+    .scalars = {
+      {1, 2.5},
+      {2, std::string{"0, 1"}},
+      {3, true}
+    },
+    .int_arrays = {
+      {4, std::vector<std::int64_t>{0, 2}}
+    },
+    .float_arrays = {},
+    .bool_arrays = {},
+    .string_arrays = {}
+  };
+
+  const auto result = ds::avisynth::read_params_from_source(source, descriptor);
+
+  REQUIRE(result.has_value());
+  const auto& values = result.value();
+  REQUIRE(values.get_double("sigma", 0.0).value() == 2.5);
+  REQUIRE(values.get_int_array("planes", {}).value() == std::vector<std::int64_t>{0, 2});
+  REQUIRE(values.get_bool("enabled", false).value());
+  REQUIRE(values.get_int("vs_only", 4).value() == 4);
 }
 
 TEST_CASE("AviSynth video bridge maps planar RGBA formats") {
