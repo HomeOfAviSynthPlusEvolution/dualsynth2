@@ -1,9 +1,11 @@
 #include <avisynth.h>
 
+#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/plane_span.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -19,6 +21,42 @@
 const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
+
+class AVSFrameProvider final : public ds::VideoFrameProvider {
+public:
+  AVSFrameProvider(const std::array<PClip, 3>& clips, IScriptEnvironment* env)
+    : clips_(clips),
+      env_(env) {}
+
+  ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
+    if (input_index < 0 || input_index >= static_cast<int>(clips_.size())) {
+      return ds::Result<ds::RequestedVideoFrame>::failure(
+        ds::Error{ds::ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 input index is out of range"}
+      );
+    }
+
+    PVideoFrame frame = clips_[static_cast<std::size_t>(input_index)]->GetFrame(frame_number, env_);
+    const VideoInfo& vi = clips_[static_cast<std::size_t>(input_index)]->GetVideoInfo();
+    frames_.push_back(frame);
+    return ds::Result<ds::RequestedVideoFrame>::success(
+      ds::RequestedVideoFrame{
+        input_index,
+        frame_number,
+        ds::PlaneSpan<const BYTE>(
+          frame->GetReadPtr(PLANAR_Y),
+          vi.width,
+          vi.height,
+          frame->GetPitch(PLANAR_Y)
+        )
+      }
+    );
+  }
+
+private:
+  std::array<PClip, 3> clips_;
+  IScriptEnvironment* env_;
+  std::vector<PVideoFrame> frames_;
+};
 
 enum class VideoOperation {
   Identity,
@@ -50,7 +88,7 @@ public:
     vi_.pixel_type = VideoInfo::CS_Y8;
     vi_.fps_numerator = 24;
     vi_.fps_denominator = 1;
-    vi_.num_frames = 1;
+    vi_.num_frames = 3;
     vi_.image_type = 0;
     initialize_no_audio(vi_);
   }
@@ -199,6 +237,56 @@ private:
   double gain_;
 };
 
+class AcceptanceTemporalAverage3Filter final : public IClip {
+public:
+  explicit AcceptanceTemporalAverage3Filter(std::array<PClip, 3> clips)
+    : clips_(clips) {
+    vi_ = clips_[1]->GetVideoInfo();
+  }
+
+  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
+    PVideoFrame dst = env->NewVideoFrame(vi_);
+    AVSFrameProvider provider(clips_, env);
+    ds::VideoProcessContext context{
+      n,
+      provider,
+      ds::PlaneSpan<BYTE>(
+        dst->GetWritePtr(PLANAR_Y),
+        vi_.width,
+        vi_.height,
+        dst->GetPitch(PLANAR_Y)
+      )
+    };
+
+    const auto result = ds::acceptance::temporal_average3_process(context);
+    if (!result.has_value()) {
+      env->ThrowError(result.error().message.c_str());
+    }
+
+    return dst;
+  }
+
+  bool __stdcall GetParity(int n) override {
+    return clips_[1]->GetParity(n);
+  }
+
+  void __stdcall GetAudio(void*, int64_t, int64_t, IScriptEnvironment* env) override {
+    env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 has no audio");
+  }
+
+  int __stdcall SetCacheHints(int, int) override {
+    return 0;
+  }
+
+  const VideoInfo& __stdcall GetVideoInfo() override {
+    return vi_;
+  }
+
+private:
+  std::array<PClip, 3> clips_;
+  VideoInfo vi_{};
+};
+
 AVSValue __cdecl create_test_pattern(AVSValue args, void*, IScriptEnvironment* env) {
   const int width = args[0].AsInt();
   const int height = args[1].AsInt();
@@ -271,6 +359,32 @@ AVSValue __cdecl create_audio_gain(AVSValue args, void*, IScriptEnvironment* env
   return new AudioGainFilter(clip, args[1].AsFloat());
 }
 
+AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScriptEnvironment* env) {
+  std::array<PClip, 3> clips{
+    args[0].AsClip(),
+    args[1].AsClip(),
+    args[2].AsClip()
+  };
+
+  const VideoInfo& vi = clips[1]->GetVideoInfo();
+  if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
+    env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video");
+  }
+
+  for (const auto& clip : clips) {
+    const VideoInfo& input_vi = clip->GetVideoInfo();
+    if (!input_vi.HasVideo() ||
+        !input_vi.IsColorSpace(VideoInfo::CS_Y8) ||
+        input_vi.width != vi.width ||
+        input_vi.height != vi.height ||
+        input_vi.num_frames != vi.num_frames) {
+      env->ThrowError("DualSynth reference: DSAcceptanceTemporalAverage3 inputs must have matching Y8 video info");
+    }
+  }
+
+  return new AcceptanceTemporalAverage3Filter(clips);
+}
+
 } // namespace
 
 DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
@@ -282,6 +396,7 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   env->AddFunction("DSVideoIdentity", "c", create_video_identity, nullptr);
   env->AddFunction("DSVideoInvert", "c", create_video_invert, nullptr);
   env->AddFunction("DSVideoTranspose", "c", create_video_transpose, nullptr);
+  env->AddFunction("DSAcceptanceTemporalAverage3", "ccc", create_acceptance_temporal_average3, nullptr);
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
   return "DualSynth reference plugin";

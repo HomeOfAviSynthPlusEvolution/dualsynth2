@@ -13,6 +13,7 @@ add_executable(dualsynth_unit_tests
   unit/test_format.cpp
   unit/test_param.cpp
   unit/test_plane_span.cpp
+  unit/test_acceptance_temporal_average3.cpp
   unit/test_reference_audio_filters.cpp
   unit/test_reference_video_filters.cpp
 )
@@ -83,6 +84,15 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
   )
 
   add_test(
+    NAME vs_acceptance_temporal_average3
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/acceptance_temporal_average3.vpy
+      --
+  )
+
+  add_test(
     NAME vs_audio_gain_process
     COMMAND
       ${DS_VSPIPE_EXECUTABLE}
@@ -108,6 +118,11 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
   file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
     CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nsrc = DSTestPattern(13, 7)\nreturn DSVideoTranspose(DSVideoTranspose(src))\n"
+  )
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\na = DSTestPattern(16, 16)\nb = DSTestPattern(16, 16)\nc = DSTestPattern(16, 16)\nreturn DSAcceptanceTemporalAverage3(a, b, c).Trim(1, 1)\n"
   )
 
   file(GENERATE
@@ -137,6 +152,15 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
     COMMAND
       ${DS_AVSMETER64_EXECUTABLE}
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
+      -range=0,0
+      -o
+  )
+
+  add_test(
+    NAME avs_acceptance_temporal_average3
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
       -range=0,0
       -o
   )

@@ -1,12 +1,15 @@
 #include <vapoursynth/VapourSynth4.h>
 
+#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace {
 
@@ -34,6 +37,59 @@ struct AudioGainData {
   VSNode* node = nullptr;
   VSAudioInfo audio_info{};
   double gain = 1.0;
+};
+
+struct AcceptanceTemporalAverage3Data {
+  std::array<VSNode*, 3> nodes{};
+  VSVideoInfo video_info{};
+};
+
+class VSFrameProvider final : public ds::VideoFrameProvider {
+public:
+  VSFrameProvider(
+    const std::array<VSNode*, 3>& nodes,
+    VSFrameContext* frame_ctx,
+    const VSAPI* vsapi
+  ) : nodes_(nodes),
+      frame_ctx_(frame_ctx),
+      vsapi_(vsapi) {}
+
+  ~VSFrameProvider() override {
+    for (const VSFrame* frame : frames_) {
+      if (frame != nullptr) {
+        vsapi_->freeFrame(frame);
+      }
+    }
+  }
+
+  ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
+    if (input_index < 0 || input_index >= static_cast<int>(nodes_.size())) {
+      return ds::Result<ds::RequestedVideoFrame>::failure(
+        ds::Error{ds::ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 input index is out of range"}
+      );
+    }
+
+    const VSFrame* frame = vsapi_->getFrameFilter(frame_number, nodes_[static_cast<std::size_t>(input_index)], frame_ctx_);
+    frames_.push_back(frame);
+    return ds::Result<ds::RequestedVideoFrame>::success(
+      ds::RequestedVideoFrame{
+        input_index,
+        frame_number,
+        ds::PlaneSpan<const unsigned char>(
+          vsapi_->getReadPtr(frame, 0),
+          vsapi_->getFrameWidth(frame, 0),
+          vsapi_->getFrameHeight(frame, 0),
+          vsapi_->getStride(frame, 0)
+        )
+      }
+    );
+  }
+
+private:
+  std::array<VSNode*, 3> nodes_;
+  VSFrameContext* frame_ctx_;
+  const VSAPI* vsapi_;
+  std::vector<const VSFrame*> frames_;
 };
 
 int get_required_int(const VSMap* in, const char* key, VSMap* out, const VSAPI* vsapi) {
@@ -108,7 +164,7 @@ void VS_CC test_pattern_create(const VSMap* in, VSMap* out, void*, VSCore* core,
   data->video_info.fpsDen = 1;
   data->video_info.width = width;
   data->video_info.height = height;
-  data->video_info.numFrames = 1;
+  data->video_info.numFrames = 3;
 
   vsapi->createVideoFilter(
     out,
@@ -420,6 +476,142 @@ void VS_CC audio_gain_create(const VSMap* in, VSMap* out, void*, VSCore* core, c
   );
 }
 
+const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
+  int n,
+  int activation_reason,
+  void* instance_data,
+  void**,
+  VSFrameContext* frame_ctx,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  auto* data = static_cast<AcceptanceTemporalAverage3Data*>(instance_data);
+
+  if (activation_reason == arInitial) {
+    vsapi->requestFrameFilter(n - 1, data->nodes[0], frame_ctx);
+    vsapi->requestFrameFilter(n, data->nodes[1], frame_ctx);
+    vsapi->requestFrameFilter(n + 1, data->nodes[2], frame_ctx);
+    return nullptr;
+  }
+
+  if (activation_reason != arAllFramesReady) {
+    return nullptr;
+  }
+
+  VSFrame* dst = vsapi->newVideoFrame(
+    &data->video_info.format,
+    data->video_info.width,
+    data->video_info.height,
+    nullptr,
+    core
+  );
+
+  VSFrameProvider provider(data->nodes, frame_ctx, vsapi);
+  ds::VideoProcessContext context{
+    n,
+    provider,
+    ds::PlaneSpan<unsigned char>(
+      vsapi->getWritePtr(dst, 0),
+      data->video_info.width,
+      data->video_info.height,
+      vsapi->getStride(dst, 0)
+    )
+  };
+
+  const auto result = ds::acceptance::temporal_average3_process(context);
+  if (!result.has_value()) {
+    vsapi->freeFrame(dst);
+    return nullptr;
+  }
+
+  return dst;
+}
+
+void VS_CC acceptance_temporal_average3_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
+  auto* data = static_cast<AcceptanceTemporalAverage3Data*>(instance_data);
+  for (VSNode* node : data->nodes) {
+    if (node != nullptr) {
+      vsapi->freeNode(node);
+    }
+  }
+  delete data;
+}
+
+void VS_CC acceptance_temporal_average3_create(
+  const VSMap* in,
+  VSMap* out,
+  void*,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  std::array<const char*, 3> names{"a", "b", "c"};
+  std::array<VSNode*, 3> nodes{};
+
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    int error = 0;
+    nodes[i] = vsapi->mapGetNode(in, names[i], 0, &error);
+    if (error != peSuccess || nodes[i] == nullptr) {
+      for (VSNode* node : nodes) {
+        if (node != nullptr) {
+          vsapi->freeNode(node);
+        }
+      }
+      vsapi->mapSetError(out, "DualSynth reference: missing required AcceptanceTemporalAverage3 clip");
+      return;
+    }
+  }
+
+  const VSVideoInfo* info = vsapi->getVideoInfo(nodes[1]);
+  if (info->format.colorFamily != cfGray ||
+      info->format.sampleType != stInteger ||
+      info->format.bitsPerSample != 8) {
+    for (VSNode* node : nodes) {
+      vsapi->freeNode(node);
+    }
+    vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video");
+    return;
+  }
+
+  for (VSNode* node : nodes) {
+    const VSVideoInfo* input_info = vsapi->getVideoInfo(node);
+    if (input_info->width != info->width ||
+        input_info->height != info->height ||
+        input_info->numFrames != info->numFrames ||
+        input_info->format.colorFamily != info->format.colorFamily ||
+        input_info->format.sampleType != info->format.sampleType ||
+        input_info->format.bitsPerSample != info->format.bitsPerSample) {
+      for (VSNode* free_node : nodes) {
+        vsapi->freeNode(free_node);
+      }
+      vsapi->mapSetError(out, "DualSynth reference: AcceptanceTemporalAverage3 inputs must have matching GRAY8 video info");
+      return;
+    }
+  }
+
+  auto* data = new AcceptanceTemporalAverage3Data();
+  data->nodes = nodes;
+  data->video_info = *info;
+
+  std::array<VSFilterDependency, 3> dependencies{
+    VSFilterDependency{nodes[0], rpStrictSpatial},
+    VSFilterDependency{nodes[1], rpStrictSpatial},
+    VSFilterDependency{nodes[2], rpStrictSpatial}
+  };
+
+  vsapi->createVideoFilter(
+    out,
+    "AcceptanceTemporalAverage3",
+    &data->video_info,
+    acceptance_temporal_average3_get_frame,
+    acceptance_temporal_average3_free,
+    fmParallel,
+    dependencies.data(),
+    static_cast<int>(dependencies.size()),
+    data,
+    core
+  );
+}
+
 } // namespace
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi) {
@@ -465,6 +657,15 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     "clip:vnode;",
     "clip:vnode;",
     video_transpose_create,
+    nullptr,
+    plugin
+  );
+
+  vspapi->registerFunction(
+    "AcceptanceTemporalAverage3",
+    "a:vnode;b:vnode;c:vnode;",
+    "clip:vnode;",
+    acceptance_temporal_average3_create,
     nullptr,
     plugin
   );

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
@@ -8,6 +9,7 @@
 #include <dualsynth/plane_span.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
+#include <dualsynth/video_filter.hpp>
 
 namespace ds {
 constexpr int version_major = 0;
