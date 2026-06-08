@@ -96,6 +96,25 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
   )
 
   add_test(
+    NAME vs_neo_gradient_mask_info
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      --info
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/neo_gradient_mask_info.vpy
+      -
+  )
+
+  add_test(
+    NAME vs_neo_gradient_mask_process
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/neo_gradient_mask_process.vpy
+      --
+  )
+
+  add_test(
     NAME vs_audio_gain_process
     COMMAND
       ${DS_VSPIPE_EXECUTABLE}
@@ -126,6 +145,11 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
   file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
     CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\na = DSTestPattern(16, 16)\nb = DSTestPattern(16, 16)\nc = DSTestPattern(16, 16)\nreturn DSAcceptanceTemporalAverage3(a, b, c).Trim(1, 1)\n"
+  )
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/neo_gradient_mask_info.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nreturn DSNeoGradientMask(width=8, height=4, color=$99CCFF, depth=16)\n"
   )
 
   file(GENERATE
@@ -166,6 +190,14 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
       -range=0,0
       -o
+  )
+
+  add_test(
+    NAME avs_neo_gradient_mask_info
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/neo_gradient_mask_info.avs"
+      -info
   )
 
   add_test(
