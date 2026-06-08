@@ -2,6 +2,7 @@
 
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
+#include <dualsynth/frame.hpp>
 #include <dualsynth/media.hpp>
 #include <dualsynth/plane_span.hpp>
 
