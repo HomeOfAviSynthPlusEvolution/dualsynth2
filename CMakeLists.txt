@@ -6,11 +6,17 @@ project(DualSynth
   LANGUAGES CXX
 )
 
+if(MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 option(DS_BUILD_TESTS "Build DualSynth tests" ON)
 option(DS_BUILD_VAPOURSYNTH_REFERENCE "Build VapourSynth reference plugin" ON)
+option(DS_BUILD_AVISYNTH_REFERENCE "Build AviSynth+ reference plugin" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DualSynthCompilerOptions)
+include(FetchContent)
 
 add_library(dualsynth STATIC
   src/dualsynth/error.cpp
@@ -53,6 +59,27 @@ if(DS_BUILD_VAPOURSYNTH_REFERENCE)
   if(DS_VAPOURSYNTH_INCLUDE_DIR)
     add_subdirectory(plugins/vapoursynth/reference)
   endif()
+endif()
+
+if(DS_BUILD_AVISYNTH_REFERENCE AND WIN32 AND MSVC)
+  FetchContent_Declare(
+    AviSynthPlus
+    URL https://github.com/AviSynth/AviSynthPlus/archive/refs/tags/v3.7.5.zip
+    URL_HASH SHA256=b60cd796886a91d32e4f495ac29df19f14c99988dfdc5ef002ebb5fc4b1f0042
+  )
+  FetchContent_GetProperties(AviSynthPlus)
+  if(NOT avisynthplus_POPULATED)
+    if(POLICY CMP0169)
+      cmake_policy(PUSH)
+      cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_Populate(AviSynthPlus)
+    if(POLICY CMP0169)
+      cmake_policy(POP)
+    endif()
+  endif()
+  set(DS_AVISYNTH_INCLUDE_DIR "${avisynthplus_SOURCE_DIR}/avs_core/include")
+  add_subdirectory(plugins/avisynth/reference)
 endif()
 
 if(DS_BUILD_TESTS)

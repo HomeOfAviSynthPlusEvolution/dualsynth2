@@ -30,6 +30,19 @@ include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
 
 find_program(DS_VSPIPE_EXECUTABLE vspipe)
+set(DS_AVSMETER64_ROOT "" CACHE PATH "Optional directory containing AVSMeter64")
+set(_ds_avsmeter64_hints)
+if(DS_AVSMETER64_ROOT)
+  list(APPEND _ds_avsmeter64_hints "${DS_AVSMETER64_ROOT}")
+endif()
+if(DEFINED ENV{DS_AVSMETER64_ROOT})
+  list(APPEND _ds_avsmeter64_hints "$ENV{DS_AVSMETER64_ROOT}")
+endif()
+find_program(DS_AVSMETER64_EXECUTABLE
+  NAMES AVSMeter64 AVSMeter64.exe
+  HINTS ${_ds_avsmeter64_hints}
+)
+unset(_ds_avsmeter64_hints)
 
 if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
   add_test(
@@ -67,5 +80,49 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
       --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
       ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/audio_gain_process.vpy
       --
+  )
+endif()
+
+if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
+  set(DS_AVISYNTH_TEST_SCRIPT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration/avisynth")
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nreturn DSTestPattern(16, 16)\n"
+  )
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nreturn DSVideoInvert(DSTestPattern(16, 16))\n"
+  )
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nreturn DSAudioGain(DSAudioTestTone(48000), 0.5)\n"
+  )
+
+  add_test(
+    NAME avs_testpattern_info
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"
+      -info
+  )
+
+  add_test(
+    NAME avs_video_invert_process
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
+      -range=0,0
+      -o
+  )
+
+  add_test(
+    NAME avs_audio_gain_info
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
+      -info
   )
 endif()
