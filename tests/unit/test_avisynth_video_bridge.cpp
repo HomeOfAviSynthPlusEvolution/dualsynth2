@@ -69,3 +69,75 @@ TEST_CASE("AviSynth video bridge maps YUV 420 422 and 444 planar formats") {
     ) == item.pixel_type);
   }
 }
+
+TEST_CASE("AviSynth video bridge maps planar RGBA formats") {
+  struct Case {
+    ds::SampleFormat sample_format;
+    int pixel_type;
+  };
+
+  constexpr std::array cases{
+    Case{ds::SampleFormat::UInt8, VideoInfo::CS_RGBAP},
+    Case{ds::SampleFormat::UInt10, VideoInfo::CS_RGBAP10},
+    Case{ds::SampleFormat::UInt12, VideoInfo::CS_RGBAP12},
+    Case{ds::SampleFormat::UInt14, VideoInfo::CS_RGBAP14},
+    Case{ds::SampleFormat::UInt16, VideoInfo::CS_RGBAP16},
+    Case{ds::SampleFormat::Float32, VideoInfo::CS_RGBAPS},
+  };
+
+  for (const auto& item : cases) {
+    REQUIRE(ds::avisynth::pixel_type(
+      ds::VideoFormat{
+        ds::ColorFamily::Rgb,
+        item.sample_format,
+        4,
+        0,
+        0
+      }
+    ) == item.pixel_type);
+  }
+}
+
+TEST_CASE("AviSynth video bridge maps planar YUVA formats") {
+  struct Case {
+    ds::SampleFormat sample_format;
+    int subsampling_w;
+    int subsampling_h;
+    int pixel_type;
+  };
+
+  constexpr std::array cases{
+    Case{ds::SampleFormat::UInt8, 0, 0, VideoInfo::CS_YUVA444},
+    Case{ds::SampleFormat::UInt10, 0, 0, VideoInfo::CS_YUVA444P10},
+    Case{ds::SampleFormat::UInt12, 0, 0, VideoInfo::CS_YUVA444P12},
+    Case{ds::SampleFormat::UInt14, 0, 0, VideoInfo::CS_YUVA444P14},
+    Case{ds::SampleFormat::UInt16, 0, 0, VideoInfo::CS_YUVA444P16},
+    Case{ds::SampleFormat::Float32, 0, 0, VideoInfo::CS_YUVA444PS},
+
+    Case{ds::SampleFormat::UInt8, 1, 0, VideoInfo::CS_YUVA422},
+    Case{ds::SampleFormat::UInt10, 1, 0, VideoInfo::CS_YUVA422P10},
+    Case{ds::SampleFormat::UInt12, 1, 0, VideoInfo::CS_YUVA422P12},
+    Case{ds::SampleFormat::UInt14, 1, 0, VideoInfo::CS_YUVA422P14},
+    Case{ds::SampleFormat::UInt16, 1, 0, VideoInfo::CS_YUVA422P16},
+    Case{ds::SampleFormat::Float32, 1, 0, VideoInfo::CS_YUVA422PS},
+
+    Case{ds::SampleFormat::UInt8, 1, 1, VideoInfo::CS_YUVA420},
+    Case{ds::SampleFormat::UInt10, 1, 1, VideoInfo::CS_YUVA420P10},
+    Case{ds::SampleFormat::UInt12, 1, 1, VideoInfo::CS_YUVA420P12},
+    Case{ds::SampleFormat::UInt14, 1, 1, VideoInfo::CS_YUVA420P14},
+    Case{ds::SampleFormat::UInt16, 1, 1, VideoInfo::CS_YUVA420P16},
+    Case{ds::SampleFormat::Float32, 1, 1, VideoInfo::CS_YUVA420PS},
+  };
+
+  for (const auto& item : cases) {
+    REQUIRE(ds::avisynth::pixel_type(
+      ds::VideoFormat{
+        ds::ColorFamily::Yuv,
+        item.sample_format,
+        4,
+        item.subsampling_w,
+        item.subsampling_h
+      }
+    ) == item.pixel_type);
+  }
+}

@@ -60,58 +60,60 @@ inline int plane_id(VideoFormat format, int plane) {
 }
 
 inline int yuv_pixel_type(VideoFormat format) {
-  if (format.plane_count != 3) {
+  if (format.plane_count != 3 && format.plane_count != 4) {
     return VideoInfo::CS_UNKNOWN;
   }
+
+  const bool has_alpha = format.plane_count == 4;
 
   if (format.subsampling_w == 0 && format.subsampling_h == 0) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:
-      return VideoInfo::CS_YV24;
+      return has_alpha ? VideoInfo::CS_YUVA444 : VideoInfo::CS_YV24;
     case SampleFormat::UInt10:
-      return VideoInfo::CS_YUV444P10;
+      return has_alpha ? VideoInfo::CS_YUVA444P10 : VideoInfo::CS_YUV444P10;
     case SampleFormat::UInt12:
-      return VideoInfo::CS_YUV444P12;
+      return has_alpha ? VideoInfo::CS_YUVA444P12 : VideoInfo::CS_YUV444P12;
     case SampleFormat::UInt14:
-      return VideoInfo::CS_YUV444P14;
+      return has_alpha ? VideoInfo::CS_YUVA444P14 : VideoInfo::CS_YUV444P14;
     case SampleFormat::UInt16:
-      return VideoInfo::CS_YUV444P16;
+      return has_alpha ? VideoInfo::CS_YUVA444P16 : VideoInfo::CS_YUV444P16;
     case SampleFormat::Float32:
-      return VideoInfo::CS_YUV444PS;
+      return has_alpha ? VideoInfo::CS_YUVA444PS : VideoInfo::CS_YUV444PS;
     }
   }
 
   if (format.subsampling_w == 1 && format.subsampling_h == 0) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:
-      return VideoInfo::CS_YV16;
+      return has_alpha ? VideoInfo::CS_YUVA422 : VideoInfo::CS_YV16;
     case SampleFormat::UInt10:
-      return VideoInfo::CS_YUV422P10;
+      return has_alpha ? VideoInfo::CS_YUVA422P10 : VideoInfo::CS_YUV422P10;
     case SampleFormat::UInt12:
-      return VideoInfo::CS_YUV422P12;
+      return has_alpha ? VideoInfo::CS_YUVA422P12 : VideoInfo::CS_YUV422P12;
     case SampleFormat::UInt14:
-      return VideoInfo::CS_YUV422P14;
+      return has_alpha ? VideoInfo::CS_YUVA422P14 : VideoInfo::CS_YUV422P14;
     case SampleFormat::UInt16:
-      return VideoInfo::CS_YUV422P16;
+      return has_alpha ? VideoInfo::CS_YUVA422P16 : VideoInfo::CS_YUV422P16;
     case SampleFormat::Float32:
-      return VideoInfo::CS_YUV422PS;
+      return has_alpha ? VideoInfo::CS_YUVA422PS : VideoInfo::CS_YUV422PS;
     }
   }
 
   if (format.subsampling_w == 1 && format.subsampling_h == 1) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:
-      return VideoInfo::CS_YV12;
+      return has_alpha ? VideoInfo::CS_YUVA420 : VideoInfo::CS_YV12;
     case SampleFormat::UInt10:
-      return VideoInfo::CS_YUV420P10;
+      return has_alpha ? VideoInfo::CS_YUVA420P10 : VideoInfo::CS_YUV420P10;
     case SampleFormat::UInt12:
-      return VideoInfo::CS_YUV420P12;
+      return has_alpha ? VideoInfo::CS_YUVA420P12 : VideoInfo::CS_YUV420P12;
     case SampleFormat::UInt14:
-      return VideoInfo::CS_YUV420P14;
+      return has_alpha ? VideoInfo::CS_YUVA420P14 : VideoInfo::CS_YUV420P14;
     case SampleFormat::UInt16:
-      return VideoInfo::CS_YUV420P16;
+      return has_alpha ? VideoInfo::CS_YUVA420P16 : VideoInfo::CS_YUV420P16;
     case SampleFormat::Float32:
-      return VideoInfo::CS_YUV420PS;
+      return has_alpha ? VideoInfo::CS_YUVA420PS : VideoInfo::CS_YUV420PS;
     }
   }
 
@@ -150,6 +152,23 @@ inline int pixel_type(VideoFormat format) {
       return VideoInfo::CS_RGBP16;
     case SampleFormat::Float32:
       return VideoInfo::CS_RGBPS;
+    }
+  }
+
+  if (format.color_family == ColorFamily::Rgb && format.plane_count == 4) {
+    switch (format.sample_format) {
+    case SampleFormat::UInt8:
+      return VideoInfo::CS_RGBAP;
+    case SampleFormat::UInt10:
+      return VideoInfo::CS_RGBAP10;
+    case SampleFormat::UInt12:
+      return VideoInfo::CS_RGBAP12;
+    case SampleFormat::UInt14:
+      return VideoInfo::CS_RGBAP14;
+    case SampleFormat::UInt16:
+      return VideoInfo::CS_RGBAP16;
+    case SampleFormat::Float32:
+      return VideoInfo::CS_RGBAPS;
     }
   }
 
