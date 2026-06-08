@@ -7,39 +7,14 @@
 #include "video_filters.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <vector>
 
 namespace {
 
 struct TestPatternData {
   VSVideoInfo video_info{};
-};
-
-using VideoRequestFn = ds::Result<ds::VideoRequestResult> (*)(
-  int,
-  std::vector<ds::VideoFrameRequest>&
-);
-
-using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
-  int,
-  ds::VideoFrameProvider&,
-  ds::MutableVideoFrameView
-);
-
-ds::VideoFormat gray8_format() {
-  return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
-}
-
-template <std::size_t InputCount>
-struct VideoFilterData {
-  std::array<VSNode*, InputCount> nodes{};
-  VSVideoInfo video_info{};
-  VideoRequestFn request = nullptr;
-  VideoProcessFn process = nullptr;
 };
 
 struct AudioSourceData {
@@ -50,49 +25,6 @@ struct AudioGainData {
   VSNode* node = nullptr;
   VSAudioInfo audio_info{};
   double gain = 1.0;
-};
-
-class VSFrameProvider final : public ds::VideoFrameProvider {
-public:
-  VSFrameProvider(
-    std::span<VSNode*> nodes,
-    VSFrameContext* frame_ctx,
-    const VSAPI* vsapi
-  ) : nodes_(nodes),
-      frame_ctx_(frame_ctx),
-      vsapi_(vsapi) {}
-
-  ~VSFrameProvider() override {
-    for (const VSFrame* frame : frames_) {
-      if (frame != nullptr) {
-        vsapi_->freeFrame(frame);
-      }
-    }
-  }
-
-  ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
-    if (input_index < 0 || input_index >= static_cast<int>(nodes_.size())) {
-      return ds::Result<ds::RequestedVideoFrame>::failure(
-        ds::Error{ds::ErrorCode::InvalidArgument, "Video input index is out of range"}
-      );
-    }
-
-    const VSFrame* frame = vsapi_->getFrameFilter(frame_number, nodes_[static_cast<std::size_t>(input_index)], frame_ctx_);
-    frames_.push_back(frame);
-    return ds::Result<ds::RequestedVideoFrame>::success(
-      ds::RequestedVideoFrame{
-        input_index,
-        frame_number,
-        ds::vapoursynth::make_video_frame_view(frame, gray8_format(), vsapi_)
-      }
-    );
-  }
-
-private:
-  std::span<VSNode*> nodes_;
-  VSFrameContext* frame_ctx_;
-  const VSAPI* vsapi_;
-  std::vector<const VSFrame*> frames_;
 };
 
 int get_required_int(const VSMap* in, const char* key, VSMap* out, const VSAPI* vsapi) {
@@ -183,216 +115,16 @@ void VS_CC test_pattern_create(const VSMap* in, VSMap* out, void*, VSCore* core,
   );
 }
 
-template <std::size_t InputCount>
-const VSFrame* VS_CC video_filter_get_frame(
-  int n,
-  int activation_reason,
-  void* instance_data,
-  void**,
-  VSFrameContext* frame_ctx,
-  VSCore* core,
-  const VSAPI* vsapi
-) {
-  auto* data = static_cast<VideoFilterData<InputCount>*>(instance_data);
-
-  if (activation_reason == arInitial) {
-    std::vector<ds::VideoFrameRequest> requests;
-    const auto result = data->request(n, requests);
-    if (!result.has_value()) {
-      return nullptr;
-    }
-
-    for (const auto& request : requests) {
-      if (request.input_index < 0 || request.input_index >= static_cast<int>(data->nodes.size())) {
-        return nullptr;
-      }
-      vsapi->requestFrameFilter(
-        request.frame_number,
-        data->nodes[static_cast<std::size_t>(request.input_index)],
-        frame_ctx
-      );
-    }
-    return nullptr;
-  }
-
-  if (activation_reason != arAllFramesReady) {
-    return nullptr;
-  }
-
-  VSFrame* dst = vsapi->newVideoFrame(
-    &data->video_info.format,
-    data->video_info.width,
-    data->video_info.height,
-    nullptr,
-    core
-  );
-
-  VSFrameProvider provider(data->nodes, frame_ctx, vsapi);
-  const auto result = data->process(
-    n,
-    provider,
-    ds::vapoursynth::make_mutable_video_frame_view(dst, gray8_format(), vsapi)
-  );
-
-  if (!result.has_value()) {
-    vsapi->freeFrame(dst);
-    return nullptr;
-  }
-
-  return dst;
-}
-
-template <std::size_t InputCount>
-void VS_CC video_filter_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
-  auto* data = static_cast<VideoFilterData<InputCount>*>(instance_data);
-  for (VSNode* node : data->nodes) {
-    if (node != nullptr) {
-      vsapi->freeNode(node);
-    }
-  }
-  delete data;
-}
-
-template <class Filter>
-void create_video_filter(
-  const VSMap* in,
-  VSMap* out,
-  VSCore* core,
-  const VSAPI* vsapi,
-  const std::array<const char*, static_cast<std::size_t>(Filter::input_count)>& input_names,
-  const char* missing_error,
-  const char* format_error
-) {
-  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
-  std::array<VSNode*, input_count> nodes{};
-  std::array<ds::VideoInputInfo, input_count> input_infos{};
-
-  for (std::size_t i = 0; i < input_count; ++i) {
-    int error = 0;
-    nodes[i] = vsapi->mapGetNode(in, input_names[i], 0, &error);
-    if (error != peSuccess || nodes[i] == nullptr) {
-      for (VSNode* node : nodes) {
-        if (node != nullptr) {
-          vsapi->freeNode(node);
-        }
-      }
-      vsapi->mapSetError(out, missing_error);
-      return;
-    }
-
-    const VSVideoInfo* input_info = vsapi->getVideoInfo(nodes[i]);
-    if (input_info->format.colorFamily != cfGray ||
-        input_info->format.sampleType != stInteger ||
-        input_info->format.bitsPerSample != 8) {
-      for (VSNode* node : nodes) {
-        if (node != nullptr) {
-          vsapi->freeNode(node);
-        }
-      }
-      vsapi->mapSetError(out, format_error);
-      return;
-    }
-
-    input_infos[i] = ds::VideoInputInfo{
-      input_info->width,
-      input_info->height,
-      input_info->numFrames,
-      ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
-      ds::FrameRate{input_info->fpsNum, input_info->fpsDen}
-    };
-  }
-
-  const auto collected = ds::collect_video_input_infos<Filter>(input_infos);
-  if (!collected.has_value()) {
-    for (VSNode* node : nodes) {
-      if (node != nullptr) {
-        vsapi->freeNode(node);
-      }
-    }
-    vsapi->mapSetError(out, collected.error().message.c_str());
-    return;
-  }
-
-  const auto init_result = ds::init_video_filter<Filter>(collected.value());
-  if (!init_result.has_value()) {
-    for (VSNode* free_node : nodes) {
-      vsapi->freeNode(free_node);
-    }
-    vsapi->mapSetError(out, init_result.error().message.c_str());
-    return;
-  }
-
-  const VSVideoInfo* base_info = vsapi->getVideoInfo(nodes[0]);
-  auto* data = new VideoFilterData<input_count>();
-  data->nodes = nodes;
-  data->video_info = *base_info;
-  data->video_info.width = init_result.value().output.width;
-  data->video_info.height = init_result.value().output.height;
-  data->video_info.numFrames = init_result.value().output.num_frames;
-  data->video_info.fpsNum = init_result.value().output.fps.numerator;
-  data->video_info.fpsDen = init_result.value().output.fps.denominator;
-  data->request = ds::request_video_filter<Filter>;
-  data->process = ds::process_video_filter<Filter>;
-
-  std::array<VSFilterDependency, input_count> dependencies{};
-  for (std::size_t i = 0; i < input_count; ++i) {
-    dependencies[i] = VSFilterDependency{nodes[i], rpStrictSpatial};
-  }
-
-  vsapi->createVideoFilter(
-    out,
-    Filter::name,
-    &data->video_info,
-    video_filter_get_frame<input_count>,
-    video_filter_free<input_count>,
-    fmParallel,
-    dependencies.data(),
-    static_cast<int>(dependencies.size()),
-    data,
-    core
-  );
-}
-
-struct VSVideoFilterCreator {
-  const VSMap* in = nullptr;
-  VSMap* out = nullptr;
-  VSCore* core = nullptr;
-  const VSAPI* vsapi = nullptr;
-
-  template <class Filter>
-  void operator()(
-    const std::array<const char*, static_cast<std::size_t>(Filter::input_count)>& input_names,
-    const char* missing_error,
-    const char* format_error
-  ) const {
-    create_video_filter<Filter>(
-      in,
-      out,
-      core,
-      vsapi,
-      input_names,
-      missing_error,
-      format_error
-    );
-  }
-};
-
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoIdentityBridge>(
-    VSVideoFilterCreator{in, out, core, vsapi}
-  );
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoIdentityBridge>(in, out, core, vsapi);
 }
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoInvertBridge>(
-    VSVideoFilterCreator{in, out, core, vsapi}
-  );
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoInvertBridge>(in, out, core, vsapi);
 }
 
 void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoTransposeBridge>(
-    VSVideoFilterCreator{in, out, core, vsapi}
-  );
+  ds::vapoursynth::create_video_filter_bridge<ds::reference::VideoTransposeBridge>(in, out, core, vsapi);
 }
 
 int audio_frame_count(int64_t num_samples) {
@@ -565,7 +297,10 @@ void VS_CC acceptance_temporal_average3_create(
   const VSAPI* vsapi
 ) {
   ds::vapoursynth::create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(
-    VSVideoFilterCreator{in, out, core, vsapi}
+    in,
+    out,
+    core,
+    vsapi
   );
 }
 
