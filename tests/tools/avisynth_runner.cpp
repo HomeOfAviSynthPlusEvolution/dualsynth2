@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,6 +37,7 @@ struct Options {
   std::string runtime;
   int frame = 0;
   int64_t samples = 4800;
+  std::optional<int64_t> expect_y8_sum;
 };
 
 class DynamicLibrary {
@@ -128,7 +130,7 @@ using CreateScriptEnvironmentFn = IScriptEnvironment*(__stdcall *)(int);
 [[noreturn]] void throw_usage() {
   throw std::runtime_error(
     "usage: dualsynth_avisynth_runner (--info|--video|--audio) <script.avs> "
-    "[--frame n] [--samples n] [--runtime path]"
+    "[--frame n] [--samples n] [--expect-y8-sum n] [--runtime path]"
   );
 }
 
@@ -191,6 +193,11 @@ Options parse_args(int argc, char** argv) {
         throw_usage();
       }
       options.samples = parse_int64(argv[i], "samples");
+    } else if (arg == "--expect-y8-sum") {
+      if (++i >= argc) {
+        throw_usage();
+      }
+      options.expect_y8_sum = parse_int64(argv[i], "expect-y8-sum");
     } else if (arg == "--runtime") {
       if (++i >= argc) {
         throw_usage();
@@ -290,6 +297,22 @@ int64_t checked_audio_bytes(const VideoInfo& vi, int64_t samples) {
   return bytes;
 }
 
+int64_t y8_sum(const PVideoFrame& frame) {
+  const BYTE* src = frame->GetReadPtr(PLANAR_Y);
+  const int pitch = frame->GetPitch(PLANAR_Y);
+  const int row_size = frame->GetRowSize(PLANAR_Y);
+  const int height = frame->GetHeight(PLANAR_Y);
+
+  int64_t sum = 0;
+  for (int y = 0; y < height; ++y) {
+    const BYTE* row = src + static_cast<std::ptrdiff_t>(y) * pitch;
+    for (int x = 0; x < row_size; ++x) {
+      sum += row[x];
+    }
+  }
+  return sum;
+}
+
 void run_script(const Options& options, IScriptEnvironment* env) {
   PClip clip = import_clip(env, options.script);
   const VideoInfo& vi = clip->GetVideoInfo();
@@ -308,6 +331,18 @@ void run_script(const Options& options, IScriptEnvironment* env) {
     PVideoFrame frame = clip->GetFrame(options.frame, env);
     if (!frame) {
       throw std::runtime_error("GetFrame returned an empty frame");
+    }
+    if (options.expect_y8_sum.has_value()) {
+      if (!vi.IsColorSpace(VideoInfo::CS_Y8)) {
+        throw std::runtime_error("--expect-y8-sum requires a Y8 clip");
+      }
+      const int64_t actual = y8_sum(frame);
+      if (actual != *options.expect_y8_sum) {
+        throw std::runtime_error(
+          "unexpected Y8 sum: expected " + std::to_string(*options.expect_y8_sum) +
+          " got " + std::to_string(actual)
+        );
+      }
     }
     std::cout << "video frame=" << options.frame << " ok\n";
     return;

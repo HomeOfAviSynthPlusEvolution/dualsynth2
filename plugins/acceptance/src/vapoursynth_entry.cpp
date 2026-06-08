@@ -3,6 +3,7 @@
 #include <dualsynth/vapoursynth/video_bridge.hpp>
 
 #include "audio_filters.hpp"
+#include "copy_stamp.hpp"
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 
@@ -304,6 +305,21 @@ void VS_CC acceptance_temporal_average3_create(
   );
 }
 
+void VS_CC acceptance_copy_stamp_create(
+  const VSMap* in,
+  VSMap* out,
+  void*,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  ds::vapoursynth::create_video_filter_bridge<ds::acceptance::AcceptanceCopyStampBridge>(
+    in,
+    out,
+    core,
+    vsapi
+  );
+}
+
 } // namespace
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi) {
@@ -358,6 +374,15 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     ds::acceptance::AcceptanceTemporalAverage3Bridge::vs_signature,
     "clip:vnode;",
     acceptance_temporal_average3_create,
+    nullptr,
+    plugin
+  );
+
+  vspapi->registerFunction(
+    ds::acceptance::AcceptanceCopyStampBridge::vs_name,
+    ds::acceptance::AcceptanceCopyStampBridge::vs_signature,
+    "clip:vnode;",
+    acceptance_copy_stamp_create,
     nullptr,
     plugin
   );

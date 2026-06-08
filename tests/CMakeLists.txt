@@ -15,6 +15,7 @@ add_executable(dualsynth_unit_tests
   unit/test_mdspan.cpp
   unit/test_video_bridge.cpp
   unit/test_vapoursynth_video_bridge.cpp
+  unit/test_acceptance_copy_stamp.cpp
   unit/test_acceptance_temporal_average3.cpp
   unit/test_reference_audio_filters.cpp
   unit/test_reference_video_filters.cpp
@@ -111,6 +112,15 @@ if(TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLU
   )
 
   add_test(
+    NAME vs_acceptance_copy_stamp
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/acceptance_copy_stamp.vpy
+      --
+  )
+
+  add_test(
     NAME vs_audio_gain_process
     COMMAND
       ${DS_VSPIPE_EXECUTABLE}
@@ -141,6 +151,11 @@ if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISY
   file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
     CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\na = DSTestPattern(16, 16)\nb = DSTestPattern(16, 16)\nc = DSTestPattern(16, 16)\nreturn DSAcceptanceTemporalAverage3(a, b, c).Trim(1, 1)\n"
+  )
+
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_copy_stamp.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\nreturn DSAcceptanceCopyStamp(DSTestPattern(4, 4))\n"
   )
 
   file(GENERATE
@@ -184,6 +199,18 @@ if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISY
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
       --frame
       0
+  )
+
+  add_test(
+    NAME avs_acceptance_copy_stamp
+    COMMAND
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_copy_stamp.avs"
+      --frame
+      1
+      --expect-y8-sum
+      318
   )
 
   add_test(

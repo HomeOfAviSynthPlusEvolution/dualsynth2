@@ -3,6 +3,7 @@
 #include <dualsynth/avisynth/video_bridge.hpp>
 
 #include "audio_filters.hpp"
+#include "copy_stamp.hpp"
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 
@@ -209,6 +210,10 @@ AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScri
   return ds::avisynth::create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(args, env);
 }
 
+AVSValue __cdecl create_acceptance_copy_stamp(AVSValue args, void*, IScriptEnvironment* env) {
+  return ds::avisynth::create_video_filter_bridge<ds::acceptance::AcceptanceCopyStampBridge>(args, env);
+}
+
 } // namespace
 
 DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
@@ -246,6 +251,13 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
     nullptr
   );
   ds::avisynth::set_video_filter_mt_mode<ds::acceptance::AcceptanceTemporalAverage3Bridge>(env);
+  env->AddFunction(
+    ds::acceptance::AcceptanceCopyStampBridge::avs_name,
+    ds::acceptance::AcceptanceCopyStampBridge::avs_signature,
+    create_acceptance_copy_stamp,
+    nullptr
+  );
+  ds::avisynth::set_video_filter_mt_mode<ds::acceptance::AcceptanceCopyStampBridge>(env);
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
   ds::avisynth::set_filter_mt_mode(env, "DSAudioTestTone", ds::avisynth::MtMode::NiceFilter);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
