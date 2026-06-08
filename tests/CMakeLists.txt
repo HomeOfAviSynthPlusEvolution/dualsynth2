@@ -11,6 +11,7 @@ add_executable(dualsynth_unit_tests
   unit/test_error.cpp
   unit/test_fake_frame_lifetime.cpp
   unit/test_format.cpp
+  unit/test_param.cpp
   unit/test_plane_span.cpp
 )
 

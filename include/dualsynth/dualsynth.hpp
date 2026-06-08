@@ -4,6 +4,7 @@
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/media.hpp>
+#include <dualsynth/param.hpp>
 #include <dualsynth/plane_span.hpp>
 
 namespace ds {

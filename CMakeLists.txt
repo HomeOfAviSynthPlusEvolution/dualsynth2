@@ -15,6 +15,7 @@ add_library(dualsynth STATIC
   src/dualsynth/error.cpp
   src/dualsynth/format.cpp
   src/dualsynth/frame.cpp
+  src/dualsynth/param.cpp
 )
 
 add_library(DualSynth::dualsynth ALIAS dualsynth)
