@@ -35,3 +35,14 @@ TEST_CASE("PlaneSpan row returns a standard span") {
   REQUIRE(row[0] == 4);
   REQUIRE(row[3] == 7);
 }
+
+TEST_CASE("PlaneSpan supports const sample views") {
+  const std::array<unsigned char, 4> storage{10, 20, 30, 40};
+
+  ds::PlaneSpan<const unsigned char> plane(storage.data(), 2, 2, 2);
+
+  REQUIRE(plane(0, 0) == 10);
+  REQUIRE(plane(0, 1) == 20);
+  REQUIRE(plane.row(1)[0] == 30);
+  REQUIRE(plane.row(1)[1] == 40);
+}
