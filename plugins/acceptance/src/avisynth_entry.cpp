@@ -372,11 +372,17 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
 ) {
   AVS_linkage = vectors;
   env->AddFunction("DSTestPattern", "ii", create_test_pattern, nullptr);
+  ds::avisynth::set_filter_mt_mode(env, "DSTestPattern", ds::avisynth::MtMode::NiceFilter);
   env->AddFunction(
     ds::reference::VideoIdentityBridge::avs_name,
     ds::reference::VideoIdentityBridge::avs_signature,
     create_video_identity,
     nullptr
+  );
+  ds::avisynth::set_filter_mt_mode(
+    env,
+    ds::reference::VideoIdentityBridge::avs_name,
+    ds::avisynth::MtMode::NiceFilter
   );
   env->AddFunction(
     ds::reference::VideoInvertBridge::avs_name,
@@ -384,11 +390,21 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
     create_video_invert,
     nullptr
   );
+  ds::avisynth::set_filter_mt_mode(
+    env,
+    ds::reference::VideoInvertBridge::avs_name,
+    ds::avisynth::MtMode::NiceFilter
+  );
   env->AddFunction(
     ds::reference::VideoTransposeBridge::avs_name,
     ds::reference::VideoTransposeBridge::avs_signature,
     create_video_transpose,
     nullptr
+  );
+  ds::avisynth::set_filter_mt_mode(
+    env,
+    ds::reference::VideoTransposeBridge::avs_name,
+    ds::avisynth::MtMode::NiceFilter
   );
   env->AddFunction(
     ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
@@ -396,7 +412,14 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
     create_acceptance_temporal_average3,
     nullptr
   );
+  ds::avisynth::set_filter_mt_mode(
+    env,
+    ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
+    ds::avisynth::MtMode::NiceFilter
+  );
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
+  ds::avisynth::set_filter_mt_mode(env, "DSAudioTestTone", ds::avisynth::MtMode::NiceFilter);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
+  ds::avisynth::set_filter_mt_mode(env, "DSAudioGain", ds::avisynth::MtMode::NiceFilter);
   return "DualSynth reference plugin";
 }

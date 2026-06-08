@@ -11,6 +11,44 @@
 
 namespace ds::avisynth {
 
+enum class MtMode {
+  NiceFilter,
+  MultiInstance,
+  Serialized
+};
+
+inline ::MtMode host_mt_mode(MtMode mode) {
+  switch (mode) {
+  case MtMode::NiceFilter:
+    return MT_NICE_FILTER;
+  case MtMode::MultiInstance:
+    return MT_MULTI_INSTANCE;
+  case MtMode::Serialized:
+    return MT_SERIALIZED;
+  }
+  return MT_SERIALIZED;
+}
+
+inline void set_filter_mt_mode(
+  IScriptEnvironment2* env,
+  const char* filter_name,
+  MtMode mode,
+  bool force = false
+) {
+  env->SetFilterMTMode(filter_name, host_mt_mode(mode), force);
+}
+
+inline void set_filter_mt_mode(
+  IScriptEnvironment* env,
+  const char* filter_name,
+  MtMode mode,
+  bool force = false
+) {
+  // AviSynth+ keeps MT registration on IScriptEnvironment2 while plugin init
+  // still receives the ABI-stable base interface.
+  set_filter_mt_mode(static_cast<IScriptEnvironment2*>(env), filter_name, mode, force);
+}
+
 inline int plane_id(VideoFormat format, int plane) {
   if (format.color_family == ColorFamily::Rgb) {
     static constexpr std::array<int, 4> rgb_planes{PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A};
