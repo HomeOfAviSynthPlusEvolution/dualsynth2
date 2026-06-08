@@ -54,6 +54,33 @@ inline void set_filter_mt_mode(
   set_filter_mt_mode(static_cast<IScriptEnvironment2*>(env), filter_name, mode, force);
 }
 
+template <class Bridge>
+constexpr MtMode bridge_mt_mode() {
+  if constexpr (requires { Bridge::avs_mt_mode; }) {
+    return Bridge::avs_mt_mode;
+  } else {
+    return MtMode::NiceFilter;
+  }
+}
+
+template <class Bridge>
+inline void set_video_filter_mt_mode(IScriptEnvironment* env, bool force = false) {
+  set_filter_mt_mode(env, Bridge::avs_name, bridge_mt_mode<Bridge>(), force);
+}
+
+inline int cache_hint_response(int cachehints, int frame_range, MtMode mt_mode) {
+  (void)frame_range;
+  if (cachehints == CACHE_GET_MTMODE) {
+    return host_mt_mode(mt_mode);
+  }
+  return 0;
+}
+
+template <class Bridge>
+inline int cache_hint_response(int cachehints, int frame_range) {
+  return cache_hint_response(cachehints, frame_range, bridge_mt_mode<Bridge>());
+}
+
 inline int plane_id(VideoFormat format, int plane) {
   if (format.color_family == ColorFamily::Rgb) {
     static constexpr std::array<int, 4> rgb_planes{PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A};

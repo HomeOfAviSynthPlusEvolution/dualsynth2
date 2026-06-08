@@ -61,6 +61,12 @@ struct FakeAvisynthSource {
   }
 };
 
+struct DefaultMtBridge {};
+
+struct SerializedMtBridge {
+  static constexpr ds::avisynth::MtMode avs_mt_mode = ds::avisynth::MtMode::Serialized;
+};
+
 } // namespace
 
 TEST_CASE("AviSynth video bridge maps middle bit-depth planar formats") {
@@ -247,4 +253,11 @@ TEST_CASE("AviSynth video bridge converts host pixel types to DualSynth formats"
   REQUIRE(rgb.value() == ds::VideoFormat{ds::ColorFamily::Rgb, ds::SampleFormat::Float32, 4, 0, 0});
   REQUIRE(gray.has_value());
   REQUIRE(gray.value() == ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt16, 1, 0, 0});
+}
+
+TEST_CASE("AviSynth cache hints report bridge MT mode") {
+  REQUIRE(ds::avisynth::bridge_mt_mode<DefaultMtBridge>() == ds::avisynth::MtMode::NiceFilter);
+  REQUIRE(ds::avisynth::bridge_mt_mode<SerializedMtBridge>() == ds::avisynth::MtMode::Serialized);
+  REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_MTMODE, 0) == MT_SERIALIZED);
+  REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_POLICY, 0) == 0);
 }

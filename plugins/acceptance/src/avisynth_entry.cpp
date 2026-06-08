@@ -120,8 +120,12 @@ public:
 
   void __stdcall GetAudio(void*, int64_t, int64_t, IScriptEnvironment*) override {}
 
-  int __stdcall SetCacheHints(int, int) override {
-    return 0;
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+    return ds::avisynth::cache_hint_response(
+      cachehints,
+      frame_range,
+      ds::avisynth::MtMode::NiceFilter
+    );
   }
 
   const VideoInfo& __stdcall GetVideoInfo() override {
@@ -139,10 +143,12 @@ public:
     std::array<PClip, InputCount> clips,
     ds::VideoOutputInfo output,
     VideoProcessFn process,
+    ds::avisynth::MtMode mt_mode,
     std::size_t parity_source_index,
     bool forward_audio
   ) : clips_(clips),
       process_(process),
+      mt_mode_(mt_mode),
       parity_source_index_(parity_source_index),
       forward_audio_(forward_audio) {
     vi_ = clips_[0]->GetVideoInfo();
@@ -183,8 +189,8 @@ public:
     clips_[0]->GetAudio(buf, start, count, env);
   }
 
-  int __stdcall SetCacheHints(int, int) override {
-    return 0;
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+    return ds::avisynth::cache_hint_response(cachehints, frame_range, mt_mode_);
   }
 
   const VideoInfo& __stdcall GetVideoInfo() override {
@@ -194,6 +200,7 @@ public:
 private:
   std::array<PClip, InputCount> clips_;
   VideoProcessFn process_;
+  ds::avisynth::MtMode mt_mode_;
   std::size_t parity_source_index_;
   bool forward_audio_;
   VideoInfo vi_{};
@@ -226,8 +233,12 @@ public:
     }
   }
 
-  int __stdcall SetCacheHints(int, int) override {
-    return 0;
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+    return ds::avisynth::cache_hint_response(
+      cachehints,
+      frame_range,
+      ds::avisynth::MtMode::NiceFilter
+    );
   }
 
   const VideoInfo& __stdcall GetVideoInfo() override {
@@ -257,6 +268,14 @@ public:
     );
   }
 
+  int __stdcall SetCacheHints(int cachehints, int frame_range) override {
+    return ds::avisynth::cache_hint_response(
+      cachehints,
+      frame_range,
+      ds::avisynth::MtMode::NiceFilter
+    );
+  }
+
 private:
   double gain_;
 };
@@ -277,6 +296,7 @@ AVSValue create_video_filter(
   AVSValue args,
   IScriptEnvironment* env,
   const char* format_error,
+  ds::avisynth::MtMode mt_mode = ds::avisynth::MtMode::NiceFilter,
   std::size_t parity_source_index = 0,
   bool forward_audio = true
 ) {
@@ -313,6 +333,7 @@ AVSValue create_video_filter(
     clips,
     init_result.value().output,
     ds::process_video_filter<Filter>,
+    mt_mode,
     parity_source_index,
     forward_audio
   );
@@ -324,6 +345,7 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
     args,
     env,
     Bridge::avs_format_error,
+    ds::avisynth::bridge_mt_mode<Bridge>(),
     Bridge::parity_source_index,
     Bridge::forward_audio
   );
@@ -379,44 +401,28 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
     create_video_identity,
     nullptr
   );
-  ds::avisynth::set_filter_mt_mode(
-    env,
-    ds::reference::VideoIdentityBridge::avs_name,
-    ds::avisynth::MtMode::NiceFilter
-  );
+  ds::avisynth::set_video_filter_mt_mode<ds::reference::VideoIdentityBridge>(env);
   env->AddFunction(
     ds::reference::VideoInvertBridge::avs_name,
     ds::reference::VideoInvertBridge::avs_signature,
     create_video_invert,
     nullptr
   );
-  ds::avisynth::set_filter_mt_mode(
-    env,
-    ds::reference::VideoInvertBridge::avs_name,
-    ds::avisynth::MtMode::NiceFilter
-  );
+  ds::avisynth::set_video_filter_mt_mode<ds::reference::VideoInvertBridge>(env);
   env->AddFunction(
     ds::reference::VideoTransposeBridge::avs_name,
     ds::reference::VideoTransposeBridge::avs_signature,
     create_video_transpose,
     nullptr
   );
-  ds::avisynth::set_filter_mt_mode(
-    env,
-    ds::reference::VideoTransposeBridge::avs_name,
-    ds::avisynth::MtMode::NiceFilter
-  );
+  ds::avisynth::set_video_filter_mt_mode<ds::reference::VideoTransposeBridge>(env);
   env->AddFunction(
     ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
     ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_signature,
     create_acceptance_temporal_average3,
     nullptr
   );
-  ds::avisynth::set_filter_mt_mode(
-    env,
-    ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
-    ds::avisynth::MtMode::NiceFilter
-  );
+  ds::avisynth::set_video_filter_mt_mode<ds::acceptance::AcceptanceTemporalAverage3Bridge>(env);
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
   ds::avisynth::set_filter_mt_mode(env, "DSAudioTestTone", ds::avisynth::MtMode::NiceFilter);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
