@@ -2,11 +2,16 @@
 
 #include <array>
 #include <cstddef>
-#include <mdspan>
 #include <type_traits>
 
-#if !defined(__cpp_lib_mdspan)
-#error "DualSynth requires a C++23 standard library with std::mdspan support."
+#ifndef DS_USE_STD_MDSPAN
+#error "DualSynth mdspan backend was not configured. Link plugin targets against DualSynth::dualsynth."
+#endif
+
+#if DS_USE_STD_MDSPAN
+#include <mdspan>
+#else
+#include <experimental/mdspan>
 #endif
 
 namespace ds {

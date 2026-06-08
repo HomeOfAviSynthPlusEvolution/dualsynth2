@@ -1,10 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/mdspan.hpp>
 #include <array>
-#include <mdspan>
 #include <type_traits>
 
-TEST_CASE("PlaneView2D is a standard mdspan stride view") {
+TEST_CASE("PlaneView2D exposes an mdspan stride view") {
   using Expected = std::mdspan<
     unsigned short,
     std::dextents<std::size_t, 2>,

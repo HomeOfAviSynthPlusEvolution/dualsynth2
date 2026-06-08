@@ -22,6 +22,64 @@ option(
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DualSynthCompilerOptions)
 include(FetchContent)
+include(CheckCXXSourceCompiles)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+check_cxx_source_compiles([=[
+  #include <array>
+  #include <cstddef>
+  #include <mdspan>
+
+  int main() {
+    int storage[4]{};
+    std::mdspan<
+      int,
+      std::dextents<std::size_t, 2>,
+      std::layout_stride
+    > view{
+      storage,
+      std::layout_stride::mapping<std::dextents<std::size_t, 2>>{
+        std::dextents<std::size_t, 2>{2, 2},
+        std::array<std::size_t, 2>{2, 1}
+      }
+    };
+
+    view[1, 1] = 1;
+    return storage[3] == 1 ? 0 : 1;
+  }
+]=] DS_HAVE_STD_MDSPAN)
+
+if(NOT DS_HAVE_STD_MDSPAN)
+  FetchContent_Declare(
+    Mdspan
+    GIT_REPOSITORY https://github.com/kokkos/mdspan.git
+    GIT_TAG stable
+  )
+  FetchContent_GetProperties(Mdspan)
+  if(NOT mdspan_POPULATED)
+    if(POLICY CMP0169)
+      cmake_policy(PUSH)
+      cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_Populate(Mdspan)
+    if(POLICY CMP0169)
+      cmake_policy(POP)
+    endif()
+  endif()
+
+  add_library(dualsynth_mdspan_polyfill INTERFACE)
+  target_include_directories(dualsynth_mdspan_polyfill
+    INTERFACE
+      "${mdspan_SOURCE_DIR}/include"
+  )
+  target_compile_definitions(dualsynth_mdspan_polyfill
+    INTERFACE
+      MDSPAN_USE_BRACKET_OPERATOR=1
+      MDSPAN_USE_PAREN_OPERATOR=0
+  )
+endif()
 
 add_library(dualsynth STATIC
   src/dualsynth/error.cpp
@@ -39,6 +97,13 @@ target_include_directories(dualsynth
     $<INSTALL_INTERFACE:include>
 )
 ds_apply_compiler_options(dualsynth)
+target_compile_definitions(dualsynth
+  PUBLIC
+    DS_USE_STD_MDSPAN=$<BOOL:${DS_HAVE_STD_MDSPAN}>
+)
+if(TARGET dualsynth_mdspan_polyfill)
+  target_link_libraries(dualsynth PUBLIC dualsynth_mdspan_polyfill)
+endif()
 
 if(DS_BUILD_VAPOURSYNTH_REFERENCE)
   set(DS_VAPOURSYNTH_SDK "" CACHE PATH "Optional path to a VapourSynth SDK")
