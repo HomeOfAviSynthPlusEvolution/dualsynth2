@@ -74,6 +74,15 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
   )
 
   add_test(
+    NAME vs_video_transpose_roundtrip
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/video_transpose_roundtrip.vpy
+      --
+  )
+
+  add_test(
     NAME vs_audio_gain_process
     COMMAND
       ${DS_VSPIPE_EXECUTABLE}
@@ -97,6 +106,11 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
   )
 
   file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nsrc = DSTestPattern(13, 7)\nreturn DSVideoTranspose(DSVideoTranspose(src))\n"
+  )
+
+  file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
     CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_reference_avs>\")\nreturn DSAudioGain(DSAudioTestTone(48000), 0.5)\n"
   )
@@ -114,6 +128,15 @@ if(TARGET dualsynth_reference_avs AND DS_AVSMETER64_EXECUTABLE)
     COMMAND
       ${DS_AVSMETER64_EXECUTABLE}
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
+      -range=0,0
+      -o
+  )
+
+  add_test(
+    NAME avs_video_transpose_roundtrip
+    COMMAND
+      ${DS_AVSMETER64_EXECUTABLE}
+      "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
       -range=0,0
       -o
   )

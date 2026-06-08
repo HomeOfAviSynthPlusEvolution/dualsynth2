@@ -50,3 +50,30 @@ TEST_CASE("Reference video invert handles float normalized range") {
   REQUIRE(dst_storage[1] == Catch::Approx(0.75F));
   REQUIRE(dst_storage[2] == Catch::Approx(0.0F));
 }
+
+TEST_CASE("Reference video transpose swaps dimensions and double transpose restores data") {
+  const std::array<unsigned char, 6> src_storage{
+    1, 2, 3,
+    4, 5, 6
+  };
+  std::array<unsigned char, 6> transposed_storage{};
+  std::array<unsigned char, 6> restored_storage{};
+
+  ds::reference::transpose_plane(
+    ds::PlaneSpan<const unsigned char>(src_storage.data(), 3, 2, 3),
+    ds::PlaneSpan<unsigned char>(transposed_storage.data(), 2, 3, 2)
+  );
+
+  REQUIRE(transposed_storage == std::array<unsigned char, 6>{
+    1, 4,
+    2, 5,
+    3, 6
+  });
+
+  ds::reference::transpose_plane(
+    ds::PlaneSpan<const unsigned char>(transposed_storage.data(), 2, 3, 2),
+    ds::PlaneSpan<unsigned char>(restored_storage.data(), 3, 2, 3)
+  );
+
+  REQUIRE(restored_storage == src_storage);
+}

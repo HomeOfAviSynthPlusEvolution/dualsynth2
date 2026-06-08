@@ -17,6 +17,7 @@ struct TestPatternData {
 enum class VideoOperation {
   Identity,
   Invert,
+  Transpose,
 };
 
 struct VideoFilterData {
@@ -152,21 +153,23 @@ const VSFrame* VS_CC video_filter_get_frame(
     core
   );
 
-  const int width = vsapi->getFrameWidth(src, 0);
-  const int height = vsapi->getFrameHeight(src, 0);
+  const int src_width = vsapi->getFrameWidth(src, 0);
+  const int src_height = vsapi->getFrameHeight(src, 0);
+  const int dst_width = vsapi->getFrameWidth(dst, 0);
+  const int dst_height = vsapi->getFrameHeight(dst, 0);
   const ptrdiff_t src_stride = vsapi->getStride(src, 0);
   const ptrdiff_t dst_stride = vsapi->getStride(dst, 0);
 
   ds::PlaneSpan<const unsigned char> src_plane(
     vsapi->getReadPtr(src, 0),
-    width,
-    height,
+    src_width,
+    src_height,
     src_stride
   );
   ds::PlaneSpan<unsigned char> dst_plane(
     vsapi->getWritePtr(dst, 0),
-    width,
-    height,
+    dst_width,
+    dst_height,
     dst_stride
   );
 
@@ -176,6 +179,9 @@ const VSFrame* VS_CC video_filter_get_frame(
       break;
     case VideoOperation::Invert:
       ds::reference::invert_plane(src_plane, dst_plane);
+      break;
+    case VideoOperation::Transpose:
+      ds::reference::transpose_plane(src_plane, dst_plane);
       break;
   }
 
@@ -219,6 +225,11 @@ void create_video_filter(
   data->node = node;
   data->video_info = *input_info;
   data->operation = operation;
+  if (operation == VideoOperation::Transpose) {
+    const int width = data->video_info.width;
+    data->video_info.width = data->video_info.height;
+    data->video_info.height = width;
+  }
 
   const VSFilterDependency dependency{node, rpStrictSpatial};
   vsapi->createVideoFilter(
@@ -241,6 +252,10 @@ void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* cor
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
   create_video_filter(in, out, core, vsapi, VideoOperation::Invert, "VideoInvert");
+}
+
+void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
+  create_video_filter(in, out, core, vsapi, VideoOperation::Transpose, "VideoTranspose");
 }
 
 int audio_frame_count(int64_t num_samples) {
@@ -441,6 +456,15 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     "clip:vnode;",
     "clip:vnode;",
     video_invert_create,
+    nullptr,
+    plugin
+  );
+
+  vspapi->registerFunction(
+    "VideoTranspose",
+    "clip:vnode;",
+    "clip:vnode;",
+    video_transpose_create,
     nullptr,
     plugin
   );

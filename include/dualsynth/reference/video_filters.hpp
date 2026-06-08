@@ -41,4 +41,14 @@ void invert_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
   }
 }
 
+template <class T>
+void transpose_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
+  for (int y = 0; y < src.height(); ++y) {
+    const auto src_row = src.row(y);
+    for (int x = 0; x < src.width(); ++x) {
+      dst(x, y) = src_row[static_cast<std::size_t>(x)];
+    }
+  }
+}
+
 } // namespace ds::reference

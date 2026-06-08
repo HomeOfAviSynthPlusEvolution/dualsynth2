@@ -23,6 +23,7 @@ namespace {
 enum class VideoOperation {
   Identity,
   Invert,
+  Transpose,
 };
 
 void initialize_no_audio(VideoInfo& vi) {
@@ -91,16 +92,23 @@ class VideoFilter final : public GenericVideoFilter {
 public:
   VideoFilter(PClip child, VideoOperation operation)
     : GenericVideoFilter(child),
-      operation_(operation) {}
+      operation_(operation) {
+    if (operation_ == VideoOperation::Transpose) {
+      const int width = vi.width;
+      vi.width = vi.height;
+      vi.height = width;
+    }
+  }
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
     PVideoFrame src = child->GetFrame(n, env);
     PVideoFrame dst = env->NewVideoFrame(vi);
+    const VideoInfo& src_vi = child->GetVideoInfo();
 
     ds::PlaneSpan<const BYTE> src_plane(
       src->GetReadPtr(PLANAR_Y),
-      vi.width,
-      vi.height,
+      src_vi.width,
+      src_vi.height,
       src->GetPitch(PLANAR_Y)
     );
     ds::PlaneSpan<BYTE> dst_plane(
@@ -116,6 +124,9 @@ public:
         break;
       case VideoOperation::Invert:
         ds::reference::invert_plane(src_plane, dst_plane);
+        break;
+      case VideoOperation::Transpose:
+        ds::reference::transpose_plane(src_plane, dst_plane);
         break;
     }
 
@@ -232,6 +243,15 @@ AVSValue __cdecl create_video_invert(AVSValue args, void*, IScriptEnvironment* e
   );
 }
 
+AVSValue __cdecl create_video_transpose(AVSValue args, void*, IScriptEnvironment* env) {
+  return create_video_filter(
+    args,
+    env,
+    VideoOperation::Transpose,
+    "DualSynth reference: DSVideoTranspose supports only Y8 video"
+  );
+}
+
 AVSValue __cdecl create_audio_test_tone(AVSValue args, void*, IScriptEnvironment* env) {
   const int samples = args[0].AsInt();
   if (samples <= 0) {
@@ -261,6 +281,7 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   env->AddFunction("DSTestPattern", "ii", create_test_pattern, nullptr);
   env->AddFunction("DSVideoIdentity", "c", create_video_identity, nullptr);
   env->AddFunction("DSVideoInvert", "c", create_video_invert, nullptr);
+  env->AddFunction("DSVideoTranspose", "c", create_video_transpose, nullptr);
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
   return "DualSynth reference plugin";
