@@ -148,6 +148,34 @@ TEST_CASE("VideoTransposeBridge exposes host binding metadata") {
   REQUIRE(Bridge::forward_audio == true);
 }
 
+TEST_CASE("VideoIdentityBridge exposes host binding metadata") {
+  using Bridge = ds::reference::VideoIdentityBridge;
+
+  REQUIRE((std::is_same_v<Bridge::Core, ds::reference::VideoIdentity>));
+  REQUIRE(std::string(Bridge::vs_name) == "VideoIdentity");
+  REQUIRE(std::string(Bridge::vs_signature) == "clip:vnode;");
+  REQUIRE(Bridge::vs_input_names.size() == 1);
+  REQUIRE(std::string(Bridge::vs_input_names[0]) == "clip");
+  REQUIRE(std::string(Bridge::avs_name) == "DSVideoIdentity");
+  REQUIRE(std::string(Bridge::avs_signature) == "c");
+  REQUIRE(Bridge::parity_source_index == 0);
+  REQUIRE(Bridge::forward_audio == true);
+}
+
+TEST_CASE("VideoInvertBridge exposes host binding metadata") {
+  using Bridge = ds::reference::VideoInvertBridge;
+
+  REQUIRE((std::is_same_v<Bridge::Core, ds::reference::VideoInvert>));
+  REQUIRE(std::string(Bridge::vs_name) == "VideoInvert");
+  REQUIRE(std::string(Bridge::vs_signature) == "clip:vnode;");
+  REQUIRE(Bridge::vs_input_names.size() == 1);
+  REQUIRE(std::string(Bridge::vs_input_names[0]) == "clip");
+  REQUIRE(std::string(Bridge::avs_name) == "DSVideoInvert");
+  REQUIRE(std::string(Bridge::avs_signature) == "c");
+  REQUIRE(Bridge::parity_source_index == 0);
+  REQUIRE(Bridge::forward_audio == true);
+}
+
 TEST_CASE("Video filter dispatch helper requests and processes through descriptors") {
   std::vector<ds::VideoFrameRequest> requests;
 

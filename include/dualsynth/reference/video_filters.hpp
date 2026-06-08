@@ -185,25 +185,51 @@ struct VideoTranspose {
   }
 };
 
-struct VideoTransposeBridge {
-  using Core = VideoTranspose;
+template <class Filter>
+struct SingleInputVideoBridgeDefaults {
+  using Core = Filter;
 
-  static constexpr const char* vs_name = "VideoTranspose";
   static constexpr const char* vs_signature = "clip:vnode;";
   static constexpr std::array<const char*, static_cast<std::size_t>(Core::input_count)> vs_input_names{
     "clip"
   };
 
-  static constexpr const char* avs_name = "DSVideoTranspose";
   static constexpr const char* avs_signature = "c";
-
   static constexpr const char* missing_input_error = "DualSynth reference: missing required video clip";
   static constexpr const char* vs_format_error =
     "DualSynth reference: only GRAY8 is supported by this VS reference filter";
-  static constexpr const char* avs_format_error =
-    "DualSynth reference: DSVideoTranspose supports only Y8 video";
   static constexpr std::size_t parity_source_index = 0;
   static constexpr bool forward_audio = true;
+};
+
+struct VideoIdentityBridge : SingleInputVideoBridgeDefaults<VideoIdentity> {
+  static constexpr const char* vs_name = "VideoIdentity";
+  static constexpr const char* avs_name = "DSVideoIdentity";
+  static constexpr const char* avs_format_error =
+    "DualSynth reference: DSVideoIdentity supports only Y8 video";
+};
+
+struct VideoInvertBridge : SingleInputVideoBridgeDefaults<VideoInvert> {
+  static constexpr const char* vs_name = "VideoInvert";
+  static constexpr const char* avs_name = "DSVideoInvert";
+  static constexpr const char* avs_format_error =
+    "DualSynth reference: DSVideoInvert supports only Y8 video";
+};
+
+struct VideoTransposeBridge {
+  using Defaults = SingleInputVideoBridgeDefaults<VideoTranspose>;
+  using Core = Defaults::Core;
+  static constexpr const char* vs_name = "VideoTranspose";
+  static constexpr const auto vs_signature = Defaults::vs_signature;
+  static constexpr const auto vs_input_names = Defaults::vs_input_names;
+  static constexpr const char* avs_name = "DSVideoTranspose";
+  static constexpr const auto avs_signature = Defaults::avs_signature;
+  static constexpr const auto missing_input_error = Defaults::missing_input_error;
+  static constexpr const auto vs_format_error = Defaults::vs_format_error;
+  static constexpr const char* avs_format_error =
+    "DualSynth reference: DSVideoTranspose supports only Y8 video";
+  static constexpr auto parity_source_index = Defaults::parity_source_index;
+  static constexpr auto forward_audio = Defaults::forward_audio;
 };
 
 } // namespace ds::reference

@@ -368,28 +368,20 @@ void create_video_filter_bridge(
 }
 
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  constexpr std::array<const char*, ds::reference::VideoIdentity::input_count> input_names{"clip"};
-  create_video_filter<ds::reference::VideoIdentity>(
+  create_video_filter_bridge<ds::reference::VideoIdentityBridge>(
     in,
     out,
     core,
-    vsapi,
-    input_names,
-    "DualSynth reference: missing required video clip",
-    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+    vsapi
   );
 }
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  constexpr std::array<const char*, ds::reference::VideoInvert::input_count> input_names{"clip"};
-  create_video_filter<ds::reference::VideoInvert>(
+  create_video_filter_bridge<ds::reference::VideoInvertBridge>(
     in,
     out,
     core,
-    vsapi,
-    input_names,
-    "DualSynth reference: missing required video clip",
-    "DualSynth reference: only GRAY8 is supported by this VS reference filter"
+    vsapi
   );
 }
 
@@ -602,8 +594,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction(
-    "VideoIdentity",
-    "clip:vnode;",
+    ds::reference::VideoIdentityBridge::vs_name,
+    ds::reference::VideoIdentityBridge::vs_signature,
     "clip:vnode;",
     video_identity_create,
     nullptr,
@@ -611,8 +603,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction(
-    "VideoInvert",
-    "clip:vnode;",
+    ds::reference::VideoInvertBridge::vs_name,
+    ds::reference::VideoInvertBridge::vs_signature,
     "clip:vnode;",
     video_invert_create,
     nullptr,
