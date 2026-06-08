@@ -1,7 +1,11 @@
 #pragma once
 
+#include <dualsynth/error.hpp>
+#include <dualsynth/param.hpp>
+
 #include <array>
 #include <cstddef>
+#include <string>
 
 namespace ds {
 
@@ -34,5 +38,8 @@ concept VideoBridge = requires {
   Bridge::parity_source_index;
   Bridge::forward_audio;
 };
+
+Result<std::string> make_vapoursynth_signature(const FilterDescriptor& descriptor);
+Result<std::string> make_avisynth_signature(const FilterDescriptor& descriptor);
 
 } // namespace ds

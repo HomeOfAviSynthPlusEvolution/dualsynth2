@@ -85,6 +85,7 @@ add_library(dualsynth STATIC
   src/dualsynth/format.cpp
   src/dualsynth/frame.cpp
   src/dualsynth/param.cpp
+  src/dualsynth/video_bridge.cpp
 )
 
 add_library(DualSynth::dualsynth ALIAS dualsynth)
