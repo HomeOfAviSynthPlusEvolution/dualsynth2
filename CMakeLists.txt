@@ -13,8 +13,8 @@ endif()
 option(DS_BUILD_TESTS "Build DualSynth tests" ON)
 option(DS_BUILD_ACCEPTANCE_PLUGIN "Build DualSynth acceptance plugin" ON)
 option(
-  DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN
-  "Allow building the unverified AviSynth+ acceptance plugin entry on Linux and macOS"
+  DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN
+  "Build the AviSynth+ acceptance plugin entry on POSIX hosts"
   OFF
 )
 
@@ -88,6 +88,10 @@ add_library(dualsynth STATIC
 )
 
 add_library(DualSynth::dualsynth ALIAS dualsynth)
+
+set_target_properties(dualsynth PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+)
 
 target_compile_features(dualsynth PUBLIC cxx_std_23)
 target_include_directories(dualsynth
@@ -172,17 +176,17 @@ if(DS_BUILD_ACCEPTANCE_PLUGIN)
     endif()
   elseif(APPLE)
     set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "macos-unverified")
-    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
+    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
       set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
     endif()
   elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "linux-unverified")
-    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
+    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "linux-verified")
+    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
       set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
     endif()
   elseif(UNIX)
     set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "posix-other-unverified")
-    if(DS_BUILD_UNVERIFIED_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
+    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
       set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
     endif()
   else()

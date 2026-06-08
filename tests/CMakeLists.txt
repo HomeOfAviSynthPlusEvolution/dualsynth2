@@ -46,19 +46,22 @@ include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
 
 find_program(DS_VSPIPE_EXECUTABLE vspipe)
-set(DS_AVSMETER64_ROOT "" CACHE PATH "Optional directory containing AVSMeter64")
-set(_ds_avsmeter64_hints)
-if(DS_AVSMETER64_ROOT)
-  list(APPEND _ds_avsmeter64_hints "${DS_AVSMETER64_ROOT}")
+
+if(DS_AVISYNTH_INCLUDE_DIR)
+  add_executable(dualsynth_avisynth_runner
+    tools/avisynth_runner.cpp
+  )
+  target_compile_features(dualsynth_avisynth_runner PRIVATE cxx_std_23)
+  ds_apply_compiler_options(dualsynth_avisynth_runner)
+  target_include_directories(dualsynth_avisynth_runner
+    PRIVATE
+      ${DS_AVISYNTH_INCLUDE_DIR}
+  )
+  target_link_libraries(dualsynth_avisynth_runner
+    PRIVATE
+      ${CMAKE_DL_LIBS}
+  )
 endif()
-if(DEFINED ENV{DS_AVSMETER64_ROOT})
-  list(APPEND _ds_avsmeter64_hints "$ENV{DS_AVSMETER64_ROOT}")
-endif()
-find_program(DS_AVSMETER64_EXECUTABLE
-  NAMES AVSMeter64 AVSMeter64.exe
-  HINTS ${_ds_avsmeter64_hints}
-)
-unset(_ds_avsmeter64_hints)
 
 if(TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLUDE_DIR)
   add_test(
@@ -117,7 +120,7 @@ if(TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLU
   )
 endif()
 
-if(TARGET dualsynth_acceptance AND DS_AVSMETER64_EXECUTABLE AND DS_AVISYNTH_INCLUDE_DIR)
+if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISYNTH_INCLUDE_DIR)
   set(DS_AVISYNTH_TEST_SCRIPT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration/avisynth")
 
   file(GENERATE
@@ -148,43 +151,48 @@ if(TARGET dualsynth_acceptance AND DS_AVSMETER64_EXECUTABLE AND DS_AVISYNTH_INCL
   add_test(
     NAME avs_testpattern_info
     COMMAND
-      ${DS_AVSMETER64_EXECUTABLE}
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --info
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"
-      -info
   )
 
   add_test(
     NAME avs_video_invert_process
     COMMAND
-      ${DS_AVSMETER64_EXECUTABLE}
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
-      -range=0,0
-      -o
+      --frame
+      0
   )
 
   add_test(
     NAME avs_video_transpose_roundtrip
     COMMAND
-      ${DS_AVSMETER64_EXECUTABLE}
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
-      -range=0,0
-      -o
+      --frame
+      0
   )
 
   add_test(
     NAME avs_acceptance_temporal_average3
     COMMAND
-      ${DS_AVSMETER64_EXECUTABLE}
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
-      -range=0,0
-      -o
+      --frame
+      0
   )
 
   add_test(
     NAME avs_audio_gain_info
     COMMAND
-      ${DS_AVSMETER64_EXECUTABLE}
+      $<TARGET_FILE:dualsynth_avisynth_runner>
+      --audio
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
-      -info
+      --samples
+      4800
   )
 endif()
