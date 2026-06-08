@@ -1,8 +1,8 @@
 #include <avisynth.h>
 
 #include <dualsynth/acceptance/temporal_average3.hpp>
+#include <dualsynth/avisynth/video_bridge.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
-#include <dualsynth/reference/neo_gradient_mask.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 
 #include <array>
@@ -27,91 +27,9 @@ ds::VideoFormat gray8_format() {
   return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
 }
 
-int bits_per_sample(ds::SampleFormat sample_format) {
-  switch (sample_format) {
-  case ds::SampleFormat::UInt8:
-    return 8;
-  case ds::SampleFormat::UInt16:
-    return 16;
-  case ds::SampleFormat::Float32:
-    return 32;
-  case ds::SampleFormat::UInt10:
-  case ds::SampleFormat::UInt12:
-  case ds::SampleFormat::UInt14:
-    return 0;
-  }
-  return 0;
-}
-
-int avs_plane_id(ds::VideoFormat format, int plane) {
-  if (format.color_family == ds::ColorFamily::Rgb) {
-    static constexpr std::array<int, 4> rgb_planes{PLANAR_R, PLANAR_G, PLANAR_B, PLANAR_A};
-    return rgb_planes[static_cast<std::size_t>(plane)];
-  }
-  static constexpr std::array<int, 4> yuv_planes{PLANAR_Y, PLANAR_U, PLANAR_V, PLANAR_A};
-  return yuv_planes[static_cast<std::size_t>(plane)];
-}
-
-int avs_pixel_type(ds::VideoFormat format) {
-  if (format.color_family == ds::ColorFamily::Gray) {
-    switch (format.sample_format) {
-    case ds::SampleFormat::UInt8:
-      return VideoInfo::CS_Y8;
-    case ds::SampleFormat::UInt16:
-      return VideoInfo::CS_Y16;
-    case ds::SampleFormat::Float32:
-      return VideoInfo::CS_Y32;
-    default:
-      return VideoInfo::CS_UNKNOWN;
-    }
-  }
-
-  if (format.color_family == ds::ColorFamily::Rgb && format.plane_count == 3) {
-    switch (format.sample_format) {
-    case ds::SampleFormat::UInt8:
-      return VideoInfo::CS_RGBP;
-    case ds::SampleFormat::UInt16:
-      return VideoInfo::CS_RGBP16;
-    case ds::SampleFormat::Float32:
-      return VideoInfo::CS_RGBPS;
-    default:
-      return VideoInfo::CS_UNKNOWN;
-    }
-  }
-
-  return VideoInfo::CS_UNKNOWN;
-}
-
 ds::VideoFrameView make_const_video_frame_view(const PVideoFrame& frame, const VideoInfo& vi) {
-  const ds::VideoFormat format = gray8_format();
-  return ds::VideoFrameView{
-    format,
-    format.plane_count,
-    std::array<ds::PlaneView, 4>{
-      ds::PlaneView{frame->GetReadPtr(PLANAR_Y), frame->GetPitch(PLANAR_Y), vi.width, vi.height},
-      ds::PlaneView{},
-      ds::PlaneView{},
-      ds::PlaneView{}
-    }
-  };
-}
-
-ds::MutableVideoFrameView make_mutable_video_frame_view(
-  const PVideoFrame& frame,
-  ds::VideoFormat format
-) {
-  std::array<ds::MutablePlaneView, 4> planes{};
-  const int sample_bytes = ds::bytes_per_sample(format.sample_format);
-  for (int plane = 0; plane < format.plane_count; ++plane) {
-    const int plane_id = avs_plane_id(format, plane);
-    planes[static_cast<std::size_t>(plane)] = ds::MutablePlaneView{
-      frame->GetWritePtr(plane_id),
-      frame->GetPitch(plane_id),
-      frame->GetRowSize(plane_id) / sample_bytes,
-      frame->GetHeight(plane_id)
-    };
-  }
-  return ds::MutableVideoFrameView{format, format.plane_count, planes};
+  (void)vi;
+  return ds::avisynth::make_video_frame_view(frame, gray8_format());
 }
 
 class AVSFrameProvider final : public ds::VideoFrameProvider {
@@ -213,69 +131,6 @@ private:
   VideoInfo vi_{};
 };
 
-ds::ParamValues read_neo_gradient_mask_params(AVSValue args) {
-  static constexpr std::array<const char*, 4> names{"width", "height", "color", "depth"};
-  ds::ParamValues values{};
-  for (std::size_t i = 0; i < names.size(); ++i) {
-    if (args[static_cast<int>(i)].Defined()) {
-      values.entries.push_back(ds::ParamEntry{names[i], ds::ParamValue{args[static_cast<int>(i)].AsInt()}});
-    }
-  }
-  return values;
-}
-
-class NeoGradientMaskClip final : public IClip {
-public:
-  NeoGradientMaskClip(ds::VideoOutputInfo output, ds::ParamValues params, IScriptEnvironment* env)
-    : output_(output),
-      params_(params) {
-    vi_.width = output.width;
-    vi_.height = output.height;
-    vi_.fps_numerator = static_cast<unsigned>(output.fps.numerator);
-    vi_.fps_denominator = static_cast<unsigned>(output.fps.denominator);
-    vi_.num_frames = output.num_frames;
-    vi_.pixel_type = avs_pixel_type(output.format);
-    vi_.image_type = 0;
-    initialize_no_audio(vi_);
-
-    if (vi_.pixel_type == VideoInfo::CS_UNKNOWN) {
-      env->ThrowError("DualSynth reference: unsupported NeoGradientMask output format");
-    }
-  }
-
-  PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame frame = env->NewVideoFrame(vi_);
-    const auto result = ds::reference::NeoGradientMask::process_source(
-      n,
-      params_,
-      make_mutable_video_frame_view(frame, output_.format)
-    );
-    if (!result.has_value()) {
-      env->ThrowError(result.error().message.c_str());
-    }
-    return frame;
-  }
-
-  bool __stdcall GetParity(int) override {
-    return false;
-  }
-
-  void __stdcall GetAudio(void*, int64_t, int64_t, IScriptEnvironment*) override {}
-
-  int __stdcall SetCacheHints(int, int) override {
-    return 0;
-  }
-
-  const VideoInfo& __stdcall GetVideoInfo() override {
-    return vi_;
-  }
-
-private:
-  ds::VideoOutputInfo output_;
-  ds::ParamValues params_;
-  VideoInfo vi_{};
-};
-
 template <std::size_t InputCount>
 class VideoFilter final : public IClip {
 public:
@@ -306,7 +161,7 @@ public:
     const auto result = process_(
       n,
       provider,
-      make_mutable_video_frame_view(dst, gray8_format())
+      ds::avisynth::make_mutable_video_frame_view(dst, gray8_format())
     );
 
     if (!result.has_value()) {
@@ -416,19 +271,6 @@ AVSValue __cdecl create_test_pattern(AVSValue args, void*, IScriptEnvironment* e
   return new TestPatternClip(width, height);
 }
 
-AVSValue __cdecl create_neo_gradient_mask(AVSValue args, void*, IScriptEnvironment* env) {
-  auto params = read_neo_gradient_mask_params(args);
-  const auto init_result = ds::init_video_filter<ds::reference::NeoGradientMask>(
-    std::span<const ds::VideoInputInfo>{},
-    params
-  );
-  if (!init_result.has_value()) {
-    env->ThrowError(init_result.error().message.c_str());
-  }
-
-  return new NeoGradientMaskClip(init_result.value().output, params, env);
-}
-
 template <class Filter>
 AVSValue create_video_filter(
   AVSValue args,
@@ -529,12 +371,6 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
 ) {
   AVS_linkage = vectors;
   env->AddFunction("DSTestPattern", "ii", create_test_pattern, nullptr);
-  env->AddFunction(
-    ds::reference::NeoGradientMaskBridge::avs_name,
-    ds::reference::NeoGradientMaskBridge::avs_signature,
-    create_neo_gradient_mask,
-    nullptr
-  );
   env->AddFunction(
     ds::reference::VideoIdentityBridge::avs_name,
     ds::reference::VideoIdentityBridge::avs_signature,

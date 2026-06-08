@@ -56,5 +56,6 @@ Result<VideoFormat> make_video_format(
   int subsampling_h
 );
 int bytes_per_sample(SampleFormat sample_format);
+int bits_per_sample(SampleFormat sample_format);
 
 } // namespace ds

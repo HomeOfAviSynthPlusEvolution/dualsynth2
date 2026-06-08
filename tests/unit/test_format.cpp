@@ -56,6 +56,15 @@ TEST_CASE("Sample format reports byte width") {
   REQUIRE(ds::bytes_per_sample(ds::SampleFormat::Float32) == 4);
 }
 
+TEST_CASE("Sample format reports bit depth") {
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt8) == 8);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt16) == 16);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::Float32) == 32);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt10) == 0);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt12) == 0);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt14) == 0);
+}
+
 TEST_CASE("Audio format stores sample type and channel count") {
   const ds::AudioFormat format{
     ds::AudioSampleFormat::Float32,

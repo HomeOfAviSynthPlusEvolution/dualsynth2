@@ -8,7 +8,6 @@
 #include <dualsynth/mdspan.hpp>
 #include <dualsynth/param.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
-#include <dualsynth/reference/neo_gradient_mask.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 #include <dualsynth/video_filter.hpp>
 

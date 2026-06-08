@@ -105,4 +105,20 @@ int bytes_per_sample(SampleFormat sample_format) {
   return 0;
 }
 
+int bits_per_sample(SampleFormat sample_format) {
+  switch (sample_format) {
+  case SampleFormat::UInt8:
+    return 8;
+  case SampleFormat::UInt16:
+    return 16;
+  case SampleFormat::Float32:
+    return 32;
+  case SampleFormat::UInt10:
+  case SampleFormat::UInt12:
+  case SampleFormat::UInt14:
+    return 0;
+  }
+  return 0;
+}
+
 } // namespace ds

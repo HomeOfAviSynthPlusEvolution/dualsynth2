@@ -2,7 +2,6 @@
 
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/reference/audio_filters.hpp>
-#include <dualsynth/reference/neo_gradient_mask.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 #include <dualsynth/vapoursynth/video_bridge.hpp>
 
@@ -19,12 +18,6 @@ struct TestPatternData {
   VSVideoInfo video_info{};
 };
 
-struct NeoGradientMaskData {
-  VSVideoInfo video_info{};
-  ds::VideoOutputInfo output_info{};
-  ds::ParamValues params{};
-};
-
 using VideoRequestFn = ds::Result<ds::VideoRequestResult> (*)(
   int,
   std::vector<ds::VideoFrameRequest>&
@@ -38,92 +31,6 @@ using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
 
 ds::VideoFormat gray8_format() {
   return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
-}
-
-int vs_color_family(ds::ColorFamily color_family, int plane_count) {
-  switch (color_family) {
-  case ds::ColorFamily::Gray:
-    return cfGray;
-  case ds::ColorFamily::Rgb:
-    return cfRGB;
-  case ds::ColorFamily::Yuv:
-    return plane_count == 1 ? cfGray : cfYUV;
-  }
-  return cfUndefined;
-}
-
-int vs_sample_type(ds::SampleFormat sample_format) {
-  return sample_format == ds::SampleFormat::Float32 ? stFloat : stInteger;
-}
-
-int bits_per_sample(ds::SampleFormat sample_format) {
-  switch (sample_format) {
-  case ds::SampleFormat::UInt8:
-    return 8;
-  case ds::SampleFormat::UInt16:
-    return 16;
-  case ds::SampleFormat::Float32:
-    return 32;
-  case ds::SampleFormat::UInt10:
-  case ds::SampleFormat::UInt12:
-  case ds::SampleFormat::UInt14:
-    return 0;
-  }
-  return 0;
-}
-
-bool query_vs_video_format(ds::VideoFormat format, VSVideoFormat& output, VSCore* core, const VSAPI* vsapi) {
-  return vsapi->queryVideoFormat(
-    &output,
-    vs_color_family(format.color_family, format.plane_count),
-    vs_sample_type(format.sample_format),
-    bits_per_sample(format.sample_format),
-    format.subsampling_w,
-    format.subsampling_h,
-    core
-  ) != 0;
-}
-
-ds::VideoFrameView make_const_video_frame_view(const VSFrame* frame, ds::VideoFormat format, const VSAPI* vsapi) {
-  std::array<ds::PlaneView, 4> planes{};
-  for (int plane = 0; plane < format.plane_count; ++plane) {
-    planes[static_cast<std::size_t>(plane)] = ds::PlaneView{
-      vsapi->getReadPtr(frame, plane),
-      vsapi->getStride(frame, plane),
-      vsapi->getFrameWidth(frame, plane),
-      vsapi->getFrameHeight(frame, plane)
-    };
-  }
-  return ds::VideoFrameView{format, format.plane_count, planes};
-}
-
-ds::MutableVideoFrameView make_mutable_video_frame_view(VSFrame* frame, ds::VideoFormat format, const VSAPI* vsapi) {
-  std::array<ds::MutablePlaneView, 4> planes{};
-  for (int plane = 0; plane < format.plane_count; ++plane) {
-    planes[static_cast<std::size_t>(plane)] = ds::MutablePlaneView{
-      vsapi->getWritePtr(frame, plane),
-      vsapi->getStride(frame, plane),
-      vsapi->getFrameWidth(frame, plane),
-      vsapi->getFrameHeight(frame, plane)
-    };
-  }
-  return ds::MutableVideoFrameView{format, format.plane_count, planes};
-}
-
-ds::ParamValues read_optional_int_params(
-  const VSMap* in,
-  const std::span<const char* const> names,
-  const VSAPI* vsapi
-) {
-  ds::ParamValues values{};
-  for (const char* name : names) {
-    int error = 0;
-    const int value = vsapi->mapGetIntSaturated(in, name, 0, &error);
-    if (error == peSuccess) {
-      values.entries.push_back(ds::ParamEntry{name, ds::ParamValue{value}});
-    }
-  }
-  return values;
 }
 
 template <std::size_t InputCount>
@@ -175,7 +82,7 @@ public:
       ds::RequestedVideoFrame{
         input_index,
         frame_number,
-        make_const_video_frame_view(frame, gray8_format(), vsapi_)
+        ds::vapoursynth::make_video_frame_view(frame, gray8_format(), vsapi_)
       }
     );
   }
@@ -275,88 +182,6 @@ void VS_CC test_pattern_create(const VSMap* in, VSMap* out, void*, VSCore* core,
   );
 }
 
-const VSFrame* VS_CC neo_gradient_mask_get_frame(
-  int n,
-  int activation_reason,
-  void* instance_data,
-  void**,
-  VSFrameContext*,
-  VSCore* core,
-  const VSAPI* vsapi
-) {
-  if (activation_reason != arInitial && activation_reason != arAllFramesReady) {
-    return nullptr;
-  }
-
-  const auto* data = static_cast<const NeoGradientMaskData*>(instance_data);
-  VSFrame* frame = vsapi->newVideoFrame(
-    &data->video_info.format,
-    data->video_info.width,
-    data->video_info.height,
-    nullptr,
-    core
-  );
-
-  const auto result = ds::reference::NeoGradientMask::process_source(
-    n,
-    data->params,
-    make_mutable_video_frame_view(frame, data->output_info.format, vsapi)
-  );
-
-  if (!result.has_value()) {
-    vsapi->freeFrame(frame);
-    return nullptr;
-  }
-
-  return frame;
-}
-
-void VS_CC neo_gradient_mask_free(void* instance_data, VSCore*, const VSAPI*) {
-  delete static_cast<NeoGradientMaskData*>(instance_data);
-}
-
-void VS_CC neo_gradient_mask_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  static constexpr std::array<const char*, 4> param_names{"width", "height", "color", "depth"};
-  auto params = read_optional_int_params(in, param_names, vsapi);
-
-  const auto init_result = ds::init_video_filter<ds::reference::NeoGradientMask>(
-    std::span<const ds::VideoInputInfo>{},
-    params
-  );
-  if (!init_result.has_value()) {
-    vsapi->mapSetError(out, init_result.error().message.c_str());
-    return;
-  }
-
-  auto* data = new NeoGradientMaskData();
-  data->output_info = init_result.value().output;
-  data->params = params;
-  if (!query_vs_video_format(data->output_info.format, data->video_info.format, core, vsapi)) {
-    delete data;
-    vsapi->mapSetError(out, "DualSynth reference: failed to create NeoGradientMask output format");
-    return;
-  }
-
-  data->video_info.fpsNum = data->output_info.fps.numerator;
-  data->video_info.fpsDen = data->output_info.fps.denominator;
-  data->video_info.width = data->output_info.width;
-  data->video_info.height = data->output_info.height;
-  data->video_info.numFrames = data->output_info.num_frames;
-
-  vsapi->createVideoFilter(
-    out,
-    ds::reference::NeoGradientMask::name,
-    &data->video_info,
-    neo_gradient_mask_get_frame,
-    neo_gradient_mask_free,
-    fmParallel,
-    nullptr,
-    0,
-    data,
-    core
-  );
-}
-
 template <std::size_t InputCount>
 const VSFrame* VS_CC video_filter_get_frame(
   int n,
@@ -405,7 +230,7 @@ const VSFrame* VS_CC video_filter_get_frame(
   const auto result = data->process(
     n,
     provider,
-    make_mutable_video_frame_view(dst, gray8_format(), vsapi)
+    ds::vapoursynth::make_mutable_video_frame_view(dst, gray8_format(), vsapi)
   );
 
   if (!result.has_value()) {
@@ -797,15 +622,6 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     ds::acceptance::AcceptanceTemporalAverage3Bridge::vs_signature,
     "clip:vnode;",
     acceptance_temporal_average3_create,
-    nullptr,
-    plugin
-  );
-
-  vspapi->registerFunction(
-    ds::reference::NeoGradientMaskBridge::vs_name,
-    ds::reference::NeoGradientMaskBridge::vs_signature,
-    "clip:vnode;",
-    neo_gradient_mask_create,
     nullptr,
     plugin
   );
