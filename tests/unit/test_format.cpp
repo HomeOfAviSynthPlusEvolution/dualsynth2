@@ -27,6 +27,35 @@ TEST_CASE("Video format rejects logical 10-bit") {
   REQUIRE(result.error().code == ds::ErrorCode::UnsupportedFormat);
 }
 
+TEST_CASE("Sample format maps modern storage depths") {
+  REQUIRE(ds::sample_format_from_depth(false, 8).value() == ds::SampleFormat::UInt8);
+  REQUIRE(ds::sample_format_from_depth(false, 16).value() == ds::SampleFormat::UInt16);
+  REQUIRE(ds::sample_format_from_depth(true, 32).value() == ds::SampleFormat::Float32);
+}
+
+TEST_CASE("Sample format rejects logical packed depths") {
+  REQUIRE(ds::sample_format_from_depth(false, 10).error().code == ds::ErrorCode::UnsupportedFormat);
+  REQUIRE(ds::sample_format_from_depth(false, 12).error().code == ds::ErrorCode::UnsupportedFormat);
+  REQUIRE(ds::sample_format_from_depth(false, 14).error().code == ds::ErrorCode::UnsupportedFormat);
+}
+
+TEST_CASE("Video format can be built from host format components") {
+  const auto format = ds::make_video_format(ds::ColorFamily::Rgb, false, 16, 3, 0, 0);
+
+  REQUIRE(format.has_value());
+  REQUIRE(format.value().color_family == ds::ColorFamily::Rgb);
+  REQUIRE(format.value().sample_format == ds::SampleFormat::UInt16);
+  REQUIRE(format.value().plane_count == 3);
+  REQUIRE(format.value().subsampling_w == 0);
+  REQUIRE(format.value().subsampling_h == 0);
+}
+
+TEST_CASE("Sample format reports byte width") {
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt8) == 1);
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt16) == 2);
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::Float32) == 4);
+}
+
 TEST_CASE("Audio format stores sample type and channel count") {
   const ds::AudioFormat format{
     ds::AudioSampleFormat::Float32,

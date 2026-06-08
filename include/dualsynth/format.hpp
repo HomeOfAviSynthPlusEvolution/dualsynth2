@@ -14,6 +14,8 @@ enum class ColorFamily {
 enum class SampleFormat {
   UInt8,
   UInt10,
+  UInt12,
+  UInt14,
   UInt16,
   Float32,
 };
@@ -44,5 +46,15 @@ struct AudioFormat {
 };
 
 Result<bool> is_supported_video_format(const VideoFormat& format);
+Result<SampleFormat> sample_format_from_depth(bool floating_point, int bits_per_sample);
+Result<VideoFormat> make_video_format(
+  ColorFamily color_family,
+  bool floating_point,
+  int bits_per_sample,
+  int plane_count,
+  int subsampling_w,
+  int subsampling_h
+);
+int bytes_per_sample(SampleFormat sample_format);
 
 } // namespace ds
