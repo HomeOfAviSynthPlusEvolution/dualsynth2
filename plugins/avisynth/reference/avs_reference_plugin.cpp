@@ -24,14 +24,14 @@ namespace {
 
 class AVSFrameProvider final : public ds::VideoFrameProvider {
 public:
-  AVSFrameProvider(const std::array<PClip, 3>& clips, IScriptEnvironment* env)
+  AVSFrameProvider(std::span<PClip> clips, IScriptEnvironment* env)
     : clips_(clips),
       env_(env) {}
 
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
     if (input_index < 0 || input_index >= static_cast<int>(clips_.size())) {
       return ds::Result<ds::RequestedVideoFrame>::failure(
-        ds::Error{ds::ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 input index is out of range"}
+        ds::Error{ds::ErrorCode::InvalidArgument, "Video input index is out of range"}
       );
     }
 
@@ -53,16 +53,16 @@ public:
   }
 
 private:
-  std::array<PClip, 3> clips_;
+  std::span<PClip> clips_;
   IScriptEnvironment* env_;
   std::vector<PVideoFrame> frames_;
 };
 
-enum class VideoOperation {
-  Identity,
-  Invert,
-  Transpose,
-};
+using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
+  int,
+  ds::VideoFrameProvider&,
+  ds::PlaneSpan<unsigned char>
+);
 
 void initialize_no_audio(VideoInfo& vi) {
   vi.audio_samples_per_second = 0;
@@ -128,51 +128,39 @@ private:
 
 class VideoFilter final : public GenericVideoFilter {
 public:
-  VideoFilter(PClip child, VideoOperation operation)
+  VideoFilter(PClip child, ds::VideoOutputInfo output, VideoProcessFn process)
     : GenericVideoFilter(child),
-      operation_(operation) {
-    if (operation_ == VideoOperation::Transpose) {
-      const int width = vi.width;
-      vi.width = vi.height;
-      vi.height = width;
-    }
+      clips_{child},
+      process_(process) {
+    vi.width = output.width;
+    vi.height = output.height;
+    vi.num_frames = output.num_frames;
   }
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
-    PVideoFrame src = child->GetFrame(n, env);
     PVideoFrame dst = env->NewVideoFrame(vi);
-    const VideoInfo& src_vi = child->GetVideoInfo();
-
-    ds::PlaneSpan<const BYTE> src_plane(
-      src->GetReadPtr(PLANAR_Y),
-      src_vi.width,
-      src_vi.height,
-      src->GetPitch(PLANAR_Y)
-    );
-    ds::PlaneSpan<BYTE> dst_plane(
-      dst->GetWritePtr(PLANAR_Y),
-      vi.width,
-      vi.height,
-      dst->GetPitch(PLANAR_Y)
+    AVSFrameProvider provider(clips_, env);
+    const auto result = process_(
+      n,
+      provider,
+      ds::PlaneSpan<BYTE>(
+        dst->GetWritePtr(PLANAR_Y),
+        vi.width,
+        vi.height,
+        dst->GetPitch(PLANAR_Y)
+      )
     );
 
-    switch (operation_) {
-      case VideoOperation::Identity:
-        ds::reference::copy_plane(src_plane, dst_plane);
-        break;
-      case VideoOperation::Invert:
-        ds::reference::invert_plane(src_plane, dst_plane);
-        break;
-      case VideoOperation::Transpose:
-        ds::reference::transpose_plane(src_plane, dst_plane);
-        break;
+    if (!result.has_value()) {
+      env->ThrowError(result.error().message.c_str());
     }
 
     return dst;
   }
 
 private:
-  VideoOperation operation_;
+  std::array<PClip, 1> clips_;
+  VideoProcessFn process_;
 };
 
 class AudioTestToneClip final : public IClip {
@@ -247,7 +235,7 @@ public:
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
     PVideoFrame dst = env->NewVideoFrame(vi_);
     AVSFrameProvider provider(clips_, env);
-    ds::VideoProcessContext context{
+    const auto result = ds::process_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
       n,
       provider,
       ds::PlaneSpan<BYTE>(
@@ -256,9 +244,7 @@ public:
         vi_.height,
         dst->GetPitch(PLANAR_Y)
       )
-    };
-
-    const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
+    );
     if (!result.has_value()) {
       env->ThrowError(result.error().message.c_str());
     }
@@ -298,10 +284,10 @@ AVSValue __cdecl create_test_pattern(AVSValue args, void*, IScriptEnvironment* e
   return new TestPatternClip(width, height);
 }
 
+template <class Filter>
 AVSValue create_video_filter(
   AVSValue args,
   IScriptEnvironment* env,
-  VideoOperation operation,
   const char* format_error
 ) {
   PClip clip = args[0].AsClip();
@@ -310,32 +296,41 @@ AVSValue create_video_filter(
     env->ThrowError(format_error);
   }
 
-  return new VideoFilter(clip, operation);
+  std::array<ds::VideoInputInfo, Filter::input_count> input_infos{
+    ds::VideoInputInfo{vi.width, vi.height, vi.num_frames}
+  };
+  const auto init_result = ds::init_video_filter<Filter>(input_infos);
+  if (!init_result.has_value()) {
+    env->ThrowError(init_result.error().message.c_str());
+  }
+
+  return new VideoFilter(
+    clip,
+    init_result.value().output,
+    ds::process_video_filter<Filter>
+  );
 }
 
 AVSValue __cdecl create_video_identity(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter(
+  return create_video_filter<ds::reference::VideoIdentity>(
     args,
     env,
-    VideoOperation::Identity,
     "DualSynth reference: DSVideoIdentity supports only Y8 video"
   );
 }
 
 AVSValue __cdecl create_video_invert(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter(
+  return create_video_filter<ds::reference::VideoInvert>(
     args,
     env,
-    VideoOperation::Invert,
     "DualSynth reference: DSVideoInvert supports only Y8 video"
   );
 }
 
 AVSValue __cdecl create_video_transpose(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter(
+  return create_video_filter<ds::reference::VideoTranspose>(
     args,
     env,
-    VideoOperation::Transpose,
     "DualSynth reference: DSVideoTranspose supports only Y8 video"
   );
 }
@@ -376,8 +371,7 @@ AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScri
     input_infos[i] = ds::VideoInputInfo{input_vi.width, input_vi.height, input_vi.num_frames};
   }
 
-  ds::VideoInitContext init_context{input_infos};
-  const auto init_result = ds::acceptance::AcceptanceTemporalAverage3::init(init_context);
+  const auto init_result = ds::init_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(input_infos);
   if (!init_result.has_value()) {
     env->ThrowError(init_result.error().message.c_str());
   }

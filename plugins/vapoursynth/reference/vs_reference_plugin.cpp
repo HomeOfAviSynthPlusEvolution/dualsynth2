@@ -17,16 +17,22 @@ struct TestPatternData {
   VSVideoInfo video_info{};
 };
 
-enum class VideoOperation {
-  Identity,
-  Invert,
-  Transpose,
-};
+using VideoRequestFn = ds::Result<ds::VideoRequestResult> (*)(
+  int,
+  std::vector<ds::VideoFrameRequest>&
+);
+
+using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
+  int,
+  ds::VideoFrameProvider&,
+  ds::PlaneSpan<unsigned char>
+);
 
 struct VideoFilterData {
-  VSNode* node = nullptr;
+  std::array<VSNode*, 1> nodes{};
   VSVideoInfo video_info{};
-  VideoOperation operation = VideoOperation::Identity;
+  VideoRequestFn request = nullptr;
+  VideoProcessFn process = nullptr;
 };
 
 struct AudioSourceData {
@@ -47,7 +53,7 @@ struct AcceptanceTemporalAverage3Data {
 class VSFrameProvider final : public ds::VideoFrameProvider {
 public:
   VSFrameProvider(
-    const std::array<VSNode*, 3>& nodes,
+    std::span<VSNode*> nodes,
     VSFrameContext* frame_ctx,
     const VSAPI* vsapi
   ) : nodes_(nodes),
@@ -65,7 +71,7 @@ public:
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
     if (input_index < 0 || input_index >= static_cast<int>(nodes_.size())) {
       return ds::Result<ds::RequestedVideoFrame>::failure(
-        ds::Error{ds::ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 input index is out of range"}
+        ds::Error{ds::ErrorCode::InvalidArgument, "Video input index is out of range"}
       );
     }
 
@@ -86,7 +92,7 @@ public:
   }
 
 private:
-  std::array<VSNode*, 3> nodes_;
+  std::span<VSNode*> nodes_;
   VSFrameContext* frame_ctx_;
   const VSAPI* vsapi_;
   std::vector<const VSFrame*> frames_;
@@ -192,7 +198,22 @@ const VSFrame* VS_CC video_filter_get_frame(
   auto* data = static_cast<VideoFilterData*>(instance_data);
 
   if (activation_reason == arInitial) {
-    vsapi->requestFrameFilter(n, data->node, frame_ctx);
+    std::vector<ds::VideoFrameRequest> requests;
+    const auto result = data->request(n, requests);
+    if (!result.has_value()) {
+      return nullptr;
+    }
+
+    for (const auto& request : requests) {
+      if (request.input_index < 0 || request.input_index >= static_cast<int>(data->nodes.size())) {
+        return nullptr;
+      }
+      vsapi->requestFrameFilter(
+        request.frame_number,
+        data->nodes[static_cast<std::size_t>(request.input_index)],
+        frame_ctx
+      );
+    }
     return nullptr;
   }
 
@@ -200,66 +221,50 @@ const VSFrame* VS_CC video_filter_get_frame(
     return nullptr;
   }
 
-  const VSFrame* src = vsapi->getFrameFilter(n, data->node, frame_ctx);
   VSFrame* dst = vsapi->newVideoFrame(
     &data->video_info.format,
     data->video_info.width,
     data->video_info.height,
-    src,
+    nullptr,
     core
   );
 
-  const int src_width = vsapi->getFrameWidth(src, 0);
-  const int src_height = vsapi->getFrameHeight(src, 0);
-  const int dst_width = vsapi->getFrameWidth(dst, 0);
-  const int dst_height = vsapi->getFrameHeight(dst, 0);
-  const ptrdiff_t src_stride = vsapi->getStride(src, 0);
-  const ptrdiff_t dst_stride = vsapi->getStride(dst, 0);
-
-  ds::PlaneSpan<const unsigned char> src_plane(
-    vsapi->getReadPtr(src, 0),
-    src_width,
-    src_height,
-    src_stride
-  );
-  ds::PlaneSpan<unsigned char> dst_plane(
-    vsapi->getWritePtr(dst, 0),
-    dst_width,
-    dst_height,
-    dst_stride
+  VSFrameProvider provider(data->nodes, frame_ctx, vsapi);
+  const auto result = data->process(
+    n,
+    provider,
+    ds::PlaneSpan<unsigned char>(
+      vsapi->getWritePtr(dst, 0),
+      vsapi->getFrameWidth(dst, 0),
+      vsapi->getFrameHeight(dst, 0),
+      vsapi->getStride(dst, 0)
+    )
   );
 
-  switch (data->operation) {
-    case VideoOperation::Identity:
-      ds::reference::copy_plane(src_plane, dst_plane);
-      break;
-    case VideoOperation::Invert:
-      ds::reference::invert_plane(src_plane, dst_plane);
-      break;
-    case VideoOperation::Transpose:
-      ds::reference::transpose_plane(src_plane, dst_plane);
-      break;
+  if (!result.has_value()) {
+    vsapi->freeFrame(dst);
+    return nullptr;
   }
 
-  vsapi->freeFrame(src);
   return dst;
 }
 
 void VS_CC video_filter_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
   auto* data = static_cast<VideoFilterData*>(instance_data);
-  if (data->node != nullptr) {
-    vsapi->freeNode(data->node);
+  for (VSNode* node : data->nodes) {
+    if (node != nullptr) {
+      vsapi->freeNode(node);
+    }
   }
   delete data;
 }
 
+template <class Filter>
 void create_video_filter(
   const VSMap* in,
   VSMap* out,
   VSCore* core,
-  const VSAPI* vsapi,
-  VideoOperation operation,
-  const char* name
+  const VSAPI* vsapi
 ) {
   int error = 0;
   VSNode* node = vsapi->mapGetNode(in, "clip", 0, &error);
@@ -277,20 +282,29 @@ void create_video_filter(
     return;
   }
 
-  auto* data = new VideoFilterData();
-  data->node = node;
-  data->video_info = *input_info;
-  data->operation = operation;
-  if (operation == VideoOperation::Transpose) {
-    const int width = data->video_info.width;
-    data->video_info.width = data->video_info.height;
-    data->video_info.height = width;
+  std::array<ds::VideoInputInfo, Filter::input_count> input_infos{
+    ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames}
+  };
+  const auto init_result = ds::init_video_filter<Filter>(input_infos);
+  if (!init_result.has_value()) {
+    vsapi->freeNode(node);
+    vsapi->mapSetError(out, init_result.error().message.c_str());
+    return;
   }
+
+  auto* data = new VideoFilterData();
+  data->nodes[0] = node;
+  data->video_info = *input_info;
+  data->video_info.width = init_result.value().output.width;
+  data->video_info.height = init_result.value().output.height;
+  data->video_info.numFrames = init_result.value().output.num_frames;
+  data->request = ds::request_video_filter<Filter>;
+  data->process = ds::process_video_filter<Filter>;
 
   const VSFilterDependency dependency{node, rpStrictSpatial};
   vsapi->createVideoFilter(
     out,
-    name,
+    Filter::name,
     &data->video_info,
     video_filter_get_frame,
     video_filter_free,
@@ -303,15 +317,15 @@ void create_video_filter(
 }
 
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter(in, out, core, vsapi, VideoOperation::Identity, "VideoIdentity");
+  create_video_filter<ds::reference::VideoIdentity>(in, out, core, vsapi);
 }
 
 void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter(in, out, core, vsapi, VideoOperation::Invert, "VideoInvert");
+  create_video_filter<ds::reference::VideoInvert>(in, out, core, vsapi);
 }
 
 void VS_CC video_transpose_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
-  create_video_filter(in, out, core, vsapi, VideoOperation::Transpose, "VideoTranspose");
+  create_video_filter<ds::reference::VideoTranspose>(in, out, core, vsapi);
 }
 
 int audio_frame_count(int64_t num_samples) {
@@ -489,8 +503,7 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
 
   if (activation_reason == arInitial) {
     std::vector<ds::VideoFrameRequest> requests;
-    ds::VideoRequestContext request_context{n, requests};
-    const auto result = ds::acceptance::AcceptanceTemporalAverage3::request(request_context);
+    const auto result = ds::request_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(n, requests);
     if (!result.has_value()) {
       return nullptr;
     }
@@ -521,7 +534,7 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
   );
 
   VSFrameProvider provider(data->nodes, frame_ctx, vsapi);
-  ds::VideoProcessContext context{
+  const auto result = ds::process_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
     n,
     provider,
     ds::PlaneSpan<unsigned char>(
@@ -530,9 +543,7 @@ const VSFrame* VS_CC acceptance_temporal_average3_get_frame(
       data->video_info.height,
       vsapi->getStride(dst, 0)
     )
-  };
-
-  const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);
+  );
   if (!result.has_value()) {
     vsapi->freeFrame(dst);
     return nullptr;
@@ -590,8 +601,7 @@ void VS_CC acceptance_temporal_average3_create(
     input_infos[i] = ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames};
   }
 
-  ds::VideoInitContext init_context{input_infos};
-  const auto init_result = ds::acceptance::AcceptanceTemporalAverage3::init(init_context);
+  const auto init_result = ds::init_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(input_infos);
   if (!init_result.has_value()) {
     for (VSNode* node : nodes) {
       vsapi->freeNode(node);

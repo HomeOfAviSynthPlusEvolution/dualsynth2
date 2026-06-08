@@ -2,6 +2,39 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/reference/video_filters.hpp>
+#include <string>
+#include <vector>
+
+namespace {
+
+class SingleFrameProvider final : public ds::VideoFrameProvider {
+public:
+  explicit SingleFrameProvider(ds::PlaneSpan<const unsigned char> src)
+    : src_(src) {}
+
+  ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
+    requested_input_ = input_index;
+    requested_frame_ = frame_number;
+    return ds::Result<ds::RequestedVideoFrame>::success(
+      ds::RequestedVideoFrame{input_index, frame_number, src_}
+    );
+  }
+
+  int requested_input() const {
+    return requested_input_;
+  }
+
+  int requested_frame() const {
+    return requested_frame_;
+  }
+
+private:
+  ds::PlaneSpan<const unsigned char> src_;
+  int requested_input_ = -1;
+  int requested_frame_ = -1;
+};
+
+} // namespace
 
 TEST_CASE("Reference video identity copies uint8 planes") {
   const std::array<unsigned char, 4> src_storage{1, 2, 3, 4};
@@ -76,4 +109,51 @@ TEST_CASE("Reference video transpose swaps dimensions and double transpose resto
   );
 
   REQUIRE(restored_storage == src_storage);
+}
+
+TEST_CASE("Reference video descriptors expose metadata and initialize output info") {
+  std::vector<ds::VideoInputInfo> input{ds::VideoInputInfo{13, 7, 3}};
+
+  const auto identity_init = ds::init_video_filter<ds::reference::VideoIdentity>(input);
+  const auto transpose_init = ds::init_video_filter<ds::reference::VideoTranspose>(input);
+
+  REQUIRE(std::string(ds::reference::VideoIdentity::name) == "VideoIdentity");
+  REQUIRE(ds::reference::VideoIdentity::input_count == 1);
+  REQUIRE(identity_init.has_value());
+  REQUIRE(identity_init.value().output.width == 13);
+  REQUIRE(identity_init.value().output.height == 7);
+  REQUIRE(identity_init.value().output.num_frames == 3);
+
+  REQUIRE(std::string(ds::reference::VideoTranspose::name) == "VideoTranspose");
+  REQUIRE(ds::reference::VideoTranspose::input_count == 1);
+  REQUIRE(transpose_init.has_value());
+  REQUIRE(transpose_init.value().output.width == 7);
+  REQUIRE(transpose_init.value().output.height == 13);
+  REQUIRE(transpose_init.value().output.num_frames == 3);
+}
+
+TEST_CASE("Video filter dispatch helper requests and processes through descriptors") {
+  std::vector<ds::VideoFrameRequest> requests;
+
+  const auto request_result = ds::request_video_filter<ds::reference::VideoInvert>(4, requests);
+
+  REQUIRE(request_result.has_value());
+  REQUIRE(requests.size() == 1);
+  REQUIRE(requests[0].input_index == 0);
+  REQUIRE(requests[0].frame_number == 4);
+
+  const std::array<unsigned char, 4> src_storage{0, 10, 127, 255};
+  std::array<unsigned char, 4> dst_storage{};
+  SingleFrameProvider provider(ds::PlaneSpan<const unsigned char>(src_storage.data(), 4, 1, 4));
+
+  const auto process_result = ds::process_video_filter<ds::reference::VideoInvert>(
+    4,
+    provider,
+    ds::PlaneSpan<unsigned char>(dst_storage.data(), 4, 1, 4)
+  );
+
+  REQUIRE(process_result.has_value());
+  REQUIRE(provider.requested_input() == 0);
+  REQUIRE(provider.requested_frame() == 4);
+  REQUIRE(dst_storage == std::array<unsigned char, 4>{255, 245, 128, 0});
 }

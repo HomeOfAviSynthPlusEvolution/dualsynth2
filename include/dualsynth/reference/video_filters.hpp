@@ -1,7 +1,10 @@
 #pragma once
 
 #include <dualsynth/plane_span.hpp>
+#include <dualsynth/video_filter.hpp>
 
+#include <cstddef>
+#include <string>
 #include <type_traits>
 
 namespace ds::reference {
@@ -50,5 +53,135 @@ void transpose_plane(PlaneSpan<const T> src, PlaneSpan<T> dst) {
     }
   }
 }
+
+inline Result<VideoInitResult> init_single_input_same_size(VideoInitContext& context, const char* name) {
+  if (context.inputs.size() != 1) {
+    return Result<VideoInitResult>::failure(
+      Error{ErrorCode::InvalidArgument, std::string(name) + " requires exactly one video input"}
+    );
+  }
+
+  const VideoInputInfo& input = context.inputs[0];
+  return Result<VideoInitResult>::success(
+    VideoInitResult{VideoOutputInfo{input.width, input.height, input.num_frames}}
+  );
+}
+
+inline Result<VideoInitResult> init_single_input_transposed(VideoInitContext& context, const char* name) {
+  if (context.inputs.size() != 1) {
+    return Result<VideoInitResult>::failure(
+      Error{ErrorCode::InvalidArgument, std::string(name) + " requires exactly one video input"}
+    );
+  }
+
+  const VideoInputInfo& input = context.inputs[0];
+  return Result<VideoInitResult>::success(
+    VideoInitResult{VideoOutputInfo{input.height, input.width, input.num_frames}}
+  );
+}
+
+inline Result<VideoRequestResult> request_current_frame(VideoRequestContext& context) {
+  context.request_frame(0, context.output_frame);
+  return Result<VideoRequestResult>::success(VideoRequestResult{});
+}
+
+inline Result<RequestedVideoFrame> get_current_input_frame(VideoProcessContext& context) {
+  return context.frames.get(0, context.output_frame);
+}
+
+inline bool dimensions_match(PlaneSpan<const unsigned char> src, PlaneSpan<unsigned char> dst) {
+  return src.width() == dst.width() && src.height() == dst.height();
+}
+
+inline bool transposed_dimensions_match(PlaneSpan<const unsigned char> src, PlaneSpan<unsigned char> dst) {
+  return src.width() == dst.height() && src.height() == dst.width();
+}
+
+struct VideoIdentity {
+  static constexpr const char* name = "VideoIdentity";
+  static constexpr int input_count = 1;
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+
+  static Result<VideoInitResult> init(VideoInitContext& context) {
+    return init_single_input_same_size(context, name);
+  }
+
+  static Result<VideoRequestResult> request(VideoRequestContext& context) {
+    return request_current_frame(context);
+  }
+
+  static Result<VideoProcessResult> process(VideoProcessContext& context) {
+    auto frame = get_current_input_frame(context);
+    if (!frame.has_value()) {
+      return Result<VideoProcessResult>::failure(frame.error());
+    }
+    if (!dimensions_match(frame.value().plane, context.dst)) {
+      return Result<VideoProcessResult>::failure(
+        Error{ErrorCode::InvalidArgument, "VideoIdentity frame dimensions do not match output"}
+      );
+    }
+
+    copy_plane(frame.value().plane, context.dst);
+    return Result<VideoProcessResult>::success(VideoProcessResult{});
+  }
+};
+
+struct VideoInvert {
+  static constexpr const char* name = "VideoInvert";
+  static constexpr int input_count = 1;
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+
+  static Result<VideoInitResult> init(VideoInitContext& context) {
+    return init_single_input_same_size(context, name);
+  }
+
+  static Result<VideoRequestResult> request(VideoRequestContext& context) {
+    return request_current_frame(context);
+  }
+
+  static Result<VideoProcessResult> process(VideoProcessContext& context) {
+    auto frame = get_current_input_frame(context);
+    if (!frame.has_value()) {
+      return Result<VideoProcessResult>::failure(frame.error());
+    }
+    if (!dimensions_match(frame.value().plane, context.dst)) {
+      return Result<VideoProcessResult>::failure(
+        Error{ErrorCode::InvalidArgument, "VideoInvert frame dimensions do not match output"}
+      );
+    }
+
+    invert_plane(frame.value().plane, context.dst);
+    return Result<VideoProcessResult>::success(VideoProcessResult{});
+  }
+};
+
+struct VideoTranspose {
+  static constexpr const char* name = "VideoTranspose";
+  static constexpr int input_count = 1;
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+
+  static Result<VideoInitResult> init(VideoInitContext& context) {
+    return init_single_input_transposed(context, name);
+  }
+
+  static Result<VideoRequestResult> request(VideoRequestContext& context) {
+    return request_current_frame(context);
+  }
+
+  static Result<VideoProcessResult> process(VideoProcessContext& context) {
+    auto frame = get_current_input_frame(context);
+    if (!frame.has_value()) {
+      return Result<VideoProcessResult>::failure(frame.error());
+    }
+    if (!transposed_dimensions_match(frame.value().plane, context.dst)) {
+      return Result<VideoProcessResult>::failure(
+        Error{ErrorCode::InvalidArgument, "VideoTranspose frame dimensions do not match output"}
+      );
+    }
+
+    transpose_plane(frame.value().plane, context.dst);
+    return Result<VideoProcessResult>::success(VideoProcessResult{});
+  }
+};
 
 } // namespace ds::reference

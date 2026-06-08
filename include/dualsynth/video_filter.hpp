@@ -97,4 +97,29 @@ struct VideoProcessContext {
   PlaneSpan<unsigned char> dst;
 };
 
+template <class Filter>
+Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
+  VideoInitContext context{inputs};
+  return Filter::init(context);
+}
+
+template <class Filter>
+Result<VideoRequestResult> request_video_filter(
+  int output_frame,
+  std::vector<VideoFrameRequest>& requests
+) {
+  VideoRequestContext context{output_frame, requests};
+  return Filter::request(context);
+}
+
+template <class Filter>
+Result<VideoProcessResult> process_video_filter(
+  int output_frame,
+  VideoFrameProvider& frames,
+  PlaneSpan<unsigned char> dst
+) {
+  VideoProcessContext context{output_frame, frames, dst};
+  return Filter::process(context);
+}
+
 } // namespace ds
