@@ -235,3 +235,16 @@ TEST_CASE("AviSynth video bridge maps planar YUVA formats") {
     ) == item.pixel_type);
   }
 }
+
+TEST_CASE("AviSynth video bridge converts host pixel types to DualSynth formats") {
+  const auto yuv = ds::avisynth::video_format_from_pixel_type(VideoInfo::CS_YUVA420P10);
+  const auto rgb = ds::avisynth::video_format_from_pixel_type(VideoInfo::CS_RGBAPS);
+  const auto gray = ds::avisynth::video_format_from_pixel_type(VideoInfo::CS_Y16);
+
+  REQUIRE(yuv.has_value());
+  REQUIRE(yuv.value() == ds::VideoFormat{ds::ColorFamily::Yuv, ds::SampleFormat::UInt10, 4, 1, 1});
+  REQUIRE(rgb.has_value());
+  REQUIRE(rgb.value() == ds::VideoFormat{ds::ColorFamily::Rgb, ds::SampleFormat::Float32, 4, 0, 0});
+  REQUIRE(gray.has_value());
+  REQUIRE(gray.value() == ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt16, 1, 0, 0});
+}

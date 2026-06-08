@@ -184,6 +184,130 @@ inline int pixel_type(VideoFormat format) {
   return VideoInfo::CS_UNKNOWN;
 }
 
+inline Result<SampleFormat> sample_format_from_pixel_type(int pixel_type) {
+  switch (pixel_type & VideoInfo::CS_Sample_Bits_Mask) {
+  case VideoInfo::CS_Sample_Bits_8:
+    return Result<SampleFormat>::success(SampleFormat::UInt8);
+  case VideoInfo::CS_Sample_Bits_10:
+    return Result<SampleFormat>::success(SampleFormat::UInt10);
+  case VideoInfo::CS_Sample_Bits_12:
+    return Result<SampleFormat>::success(SampleFormat::UInt12);
+  case VideoInfo::CS_Sample_Bits_14:
+    return Result<SampleFormat>::success(SampleFormat::UInt14);
+  case VideoInfo::CS_Sample_Bits_16:
+    return Result<SampleFormat>::success(SampleFormat::UInt16);
+  case VideoInfo::CS_Sample_Bits_32:
+    return Result<SampleFormat>::success(SampleFormat::Float32);
+  default:
+    return Result<SampleFormat>::failure({
+      ErrorCode::UnsupportedFormat,
+      "unsupported AviSynth sample depth"
+    });
+  }
+}
+
+inline int subsampling_from_pixel_type(int pixel_type, int mask, int sub_1, int sub_2, int sub_4) {
+  const int value = pixel_type & mask;
+  if (value == sub_1) {
+    return 0;
+  }
+  if (value == sub_2) {
+    return 1;
+  }
+  if (value == sub_4) {
+    return 2;
+  }
+  return 0;
+}
+
+inline Result<VideoFormat> video_format_from_pixel_type(int pixel_type) {
+  if (pixel_type == VideoInfo::CS_UNKNOWN) {
+    return Result<VideoFormat>::failure({
+      ErrorCode::UnsupportedFormat,
+      "unknown AviSynth pixel type"
+    });
+  }
+
+  auto sample_format = sample_format_from_pixel_type(pixel_type);
+  if (!sample_format.has_value()) {
+    return Result<VideoFormat>::failure(sample_format.error());
+  }
+
+  if (
+    (pixel_type & VideoInfo::CS_PLANAR) &&
+    (pixel_type & VideoInfo::CS_BGR) &&
+    (pixel_type & (VideoInfo::CS_RGB_TYPE | VideoInfo::CS_RGBA_TYPE))
+  ) {
+    const int plane_count = (pixel_type & VideoInfo::CS_RGBA_TYPE) ? 4 : 3;
+    return Result<VideoFormat>::success(
+      VideoFormat{ColorFamily::Rgb, sample_format.value(), plane_count, 0, 0}
+    );
+  }
+
+  if (pixel_type & VideoInfo::CS_YUVA) {
+    const int subsampling_w = subsampling_from_pixel_type(
+      pixel_type,
+      VideoInfo::CS_Sub_Width_Mask,
+      VideoInfo::CS_Sub_Width_1,
+      VideoInfo::CS_Sub_Width_2,
+      VideoInfo::CS_Sub_Width_4
+    );
+    const int subsampling_h = subsampling_from_pixel_type(
+      pixel_type,
+      VideoInfo::CS_Sub_Height_Mask,
+      VideoInfo::CS_Sub_Height_1,
+      VideoInfo::CS_Sub_Height_2,
+      VideoInfo::CS_Sub_Height_4
+    );
+    return Result<VideoFormat>::success(
+      VideoFormat{ColorFamily::Yuv, sample_format.value(), 4, subsampling_w, subsampling_h}
+    );
+  }
+
+  if (
+    (pixel_type & VideoInfo::CS_PLANAR) &&
+    (pixel_type & VideoInfo::CS_YUV) &&
+    (pixel_type & VideoInfo::CS_INTERLEAVED)
+  ) {
+    return Result<VideoFormat>::success(
+      VideoFormat{ColorFamily::Gray, sample_format.value(), 1, 0, 0}
+    );
+  }
+
+  if (
+    (pixel_type & VideoInfo::CS_PLANAR) &&
+    (pixel_type & VideoInfo::CS_YUV) &&
+    !(pixel_type & VideoInfo::CS_INTERLEAVED)
+  ) {
+    const int subsampling_w = subsampling_from_pixel_type(
+      pixel_type,
+      VideoInfo::CS_Sub_Width_Mask,
+      VideoInfo::CS_Sub_Width_1,
+      VideoInfo::CS_Sub_Width_2,
+      VideoInfo::CS_Sub_Width_4
+    );
+    const int subsampling_h = subsampling_from_pixel_type(
+      pixel_type,
+      VideoInfo::CS_Sub_Height_Mask,
+      VideoInfo::CS_Sub_Height_1,
+      VideoInfo::CS_Sub_Height_2,
+      VideoInfo::CS_Sub_Height_4
+    );
+    return Result<VideoFormat>::success(
+      VideoFormat{ColorFamily::Yuv, sample_format.value(), 3, subsampling_w, subsampling_h}
+    );
+  }
+
+  return Result<VideoFormat>::failure({
+    ErrorCode::UnsupportedFormat,
+    "unsupported AviSynth pixel type"
+  });
+}
+
+inline Result<VideoFormat> make_video_format(const VideoInfo& vi) {
+  return video_format_from_pixel_type(vi.pixel_type);
+}
+
 inline void initialize_no_audio(VideoInfo& vi) {
   vi.audio_samples_per_second = 0;
   vi.sample_type = 0;

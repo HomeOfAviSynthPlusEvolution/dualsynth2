@@ -50,6 +50,42 @@ inline bool query_video_format(
   ) != 0;
 }
 
+inline Result<VideoFormat> make_video_format(const VSVideoFormat& format) {
+  ColorFamily color{};
+  switch (format.colorFamily) {
+  case cfGray:
+    color = ColorFamily::Gray;
+    break;
+  case cfYUV:
+    color = ColorFamily::Yuv;
+    break;
+  case cfRGB:
+    color = ColorFamily::Rgb;
+    break;
+  default:
+    return Result<VideoFormat>::failure({
+      ErrorCode::UnsupportedFormat,
+      "unsupported VapourSynth color family"
+    });
+  }
+
+  if (format.sampleType != stInteger && format.sampleType != stFloat) {
+    return Result<VideoFormat>::failure({
+      ErrorCode::UnsupportedFormat,
+      "unsupported VapourSynth sample type"
+    });
+  }
+
+  return ds::make_video_format(
+    color,
+    format.sampleType == stFloat,
+    format.bitsPerSample,
+    format.numPlanes,
+    format.subSamplingW,
+    format.subSamplingH
+  );
+}
+
 inline VideoFrameView make_video_frame_view(
   const VSFrame* frame,
   VideoFormat format,

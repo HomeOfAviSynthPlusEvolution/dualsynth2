@@ -155,3 +155,32 @@ TEST_CASE("VapourSynth parameter reader converts host values using descriptor me
   REQUIRE(values.get_string_array("labels", {}).value() == std::vector<std::string>{"y", "u"});
   REQUIRE(values.get_int("avs_only", 4).value() == 4);
 }
+
+TEST_CASE("VapourSynth video bridge converts host video formats to DualSynth formats") {
+  const VSVideoFormat yuv420p10{
+    cfYUV,
+    stInteger,
+    10,
+    2,
+    1,
+    1,
+    3
+  };
+  const VSVideoFormat rgbs{
+    cfRGB,
+    stFloat,
+    32,
+    4,
+    0,
+    0,
+    3
+  };
+
+  const auto yuv = ds::vapoursynth::make_video_format(yuv420p10);
+  const auto rgb = ds::vapoursynth::make_video_format(rgbs);
+
+  REQUIRE(yuv.has_value());
+  REQUIRE(yuv.value() == ds::VideoFormat{ds::ColorFamily::Yuv, ds::SampleFormat::UInt10, 3, 1, 1});
+  REQUIRE(rgb.has_value());
+  REQUIRE(rgb.value() == ds::VideoFormat{ds::ColorFamily::Rgb, ds::SampleFormat::Float32, 3, 0, 0});
+}
