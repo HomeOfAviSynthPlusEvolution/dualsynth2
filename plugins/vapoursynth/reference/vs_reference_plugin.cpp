@@ -26,8 +26,38 @@ using VideoRequestFn = ds::Result<ds::VideoRequestResult> (*)(
 using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
   int,
   ds::VideoFrameProvider&,
-  ds::PlaneView2D<unsigned char>
+  ds::MutableVideoFrameView
 );
+
+ds::VideoFormat gray8_format() {
+  return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
+}
+
+ds::VideoFrameView make_const_video_frame_view(const VSFrame* frame, ds::VideoFormat format, const VSAPI* vsapi) {
+  std::array<ds::PlaneView, 4> planes{};
+  for (int plane = 0; plane < format.plane_count; ++plane) {
+    planes[static_cast<std::size_t>(plane)] = ds::PlaneView{
+      vsapi->getReadPtr(frame, plane),
+      vsapi->getStride(frame, plane),
+      vsapi->getFrameWidth(frame, plane),
+      vsapi->getFrameHeight(frame, plane)
+    };
+  }
+  return ds::VideoFrameView{format, format.plane_count, planes};
+}
+
+ds::MutableVideoFrameView make_mutable_video_frame_view(VSFrame* frame, ds::VideoFormat format, const VSAPI* vsapi) {
+  std::array<ds::MutablePlaneView, 4> planes{};
+  for (int plane = 0; plane < format.plane_count; ++plane) {
+    planes[static_cast<std::size_t>(plane)] = ds::MutablePlaneView{
+      vsapi->getWritePtr(frame, plane),
+      vsapi->getStride(frame, plane),
+      vsapi->getFrameWidth(frame, plane),
+      vsapi->getFrameHeight(frame, plane)
+    };
+  }
+  return ds::MutableVideoFrameView{format, format.plane_count, planes};
+}
 
 template <std::size_t InputCount>
 struct VideoFilterData {
@@ -78,12 +108,7 @@ public:
       ds::RequestedVideoFrame{
         input_index,
         frame_number,
-        ds::make_plane_view(
-          vsapi_->getReadPtr(frame, 0),
-          vsapi_->getFrameWidth(frame, 0),
-          vsapi_->getFrameHeight(frame, 0),
-          vsapi_->getStride(frame, 0)
-        )
+        make_const_video_frame_view(frame, gray8_format(), vsapi_)
       }
     );
   }
@@ -231,12 +256,7 @@ const VSFrame* VS_CC video_filter_get_frame(
   const auto result = data->process(
     n,
     provider,
-    ds::make_plane_view(
-      vsapi->getWritePtr(dst, 0),
-      vsapi->getFrameWidth(dst, 0),
-      vsapi->getFrameHeight(dst, 0),
-      vsapi->getStride(dst, 0)
-    )
+    make_mutable_video_frame_view(dst, gray8_format(), vsapi)
   );
 
   if (!result.has_value()) {

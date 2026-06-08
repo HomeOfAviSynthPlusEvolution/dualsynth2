@@ -22,6 +22,36 @@ const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
 
+ds::VideoFormat gray8_format() {
+  return ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0};
+}
+
+ds::VideoFrameView make_const_video_frame_view(const PVideoFrame& frame, const VideoInfo& vi) {
+  return ds::VideoFrameView{
+    gray8_format(),
+    1,
+    std::array<ds::PlaneView, 4>{
+      ds::PlaneView{frame->GetReadPtr(PLANAR_Y), frame->GetPitch(PLANAR_Y), vi.width, vi.height},
+      ds::PlaneView{},
+      ds::PlaneView{},
+      ds::PlaneView{}
+    }
+  };
+}
+
+ds::MutableVideoFrameView make_mutable_video_frame_view(const PVideoFrame& frame, const VideoInfo& vi) {
+  return ds::MutableVideoFrameView{
+    gray8_format(),
+    1,
+    std::array<ds::MutablePlaneView, 4>{
+      ds::MutablePlaneView{frame->GetWritePtr(PLANAR_Y), frame->GetPitch(PLANAR_Y), vi.width, vi.height},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{}
+    }
+  };
+}
+
 class AVSFrameProvider final : public ds::VideoFrameProvider {
 public:
   AVSFrameProvider(std::span<PClip> clips, IScriptEnvironment* env)
@@ -42,12 +72,7 @@ public:
       ds::RequestedVideoFrame{
         input_index,
         frame_number,
-        ds::make_plane_view(
-          frame->GetReadPtr(PLANAR_Y),
-          vi.width,
-          vi.height,
-          frame->GetPitch(PLANAR_Y)
-        )
+        make_const_video_frame_view(frame, vi)
       }
     );
   }
@@ -61,7 +86,7 @@ private:
 using VideoProcessFn = ds::Result<ds::VideoProcessResult> (*)(
   int,
   ds::VideoFrameProvider&,
-  ds::PlaneView2D<unsigned char>
+  ds::MutableVideoFrameView
 );
 
 void initialize_no_audio(VideoInfo& vi) {
@@ -156,12 +181,7 @@ public:
     const auto result = process_(
       n,
       provider,
-      ds::make_plane_view(
-        dst->GetWritePtr(PLANAR_Y),
-        vi_.width,
-        vi_.height,
-        dst->GetPitch(PLANAR_Y)
-      )
+      make_mutable_video_frame_view(dst, vi_)
     );
 
     if (!result.has_value()) {

@@ -28,24 +28,25 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
     }
   }
 
-  const auto& a = frames[0].value().plane;
-  const auto& b = frames[1].value().plane;
-  const auto& c = frames[2].value().plane;
+  const auto a = as_plane_view<unsigned char>(frames[0].value().frame.plane(0));
+  const auto b = as_plane_view<unsigned char>(frames[1].value().frame.plane(0));
+  const auto c = as_plane_view<unsigned char>(frames[2].value().frame.plane(0));
+  const auto dst = as_plane_view<unsigned char>(context.dst.plane(0));
 
-  if (a.extent(1) != context.dst.extent(1) ||
-      b.extent(1) != context.dst.extent(1) ||
-      c.extent(1) != context.dst.extent(1) ||
-      a.extent(0) != context.dst.extent(0) ||
-      b.extent(0) != context.dst.extent(0) ||
-      c.extent(0) != context.dst.extent(0)) {
+  if (a.extent(1) != dst.extent(1) ||
+      b.extent(1) != dst.extent(1) ||
+      c.extent(1) != dst.extent(1) ||
+      a.extent(0) != dst.extent(0) ||
+      b.extent(0) != dst.extent(0) ||
+      c.extent(0) != dst.extent(0)) {
     return Result<VideoProcessResult>::failure(
       Error{ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 frame dimensions do not match output"}
     );
   }
 
-  for (std::size_t y = 0; y < context.dst.extent(0); ++y) {
-    for (std::size_t x = 0; x < context.dst.extent(1); ++x) {
-      context.dst[y, x] = static_cast<unsigned char>(
+  for (std::size_t y = 0; y < dst.extent(0); ++y) {
+    for (std::size_t x = 0; x < dst.extent(1); ++x) {
+      dst[y, x] = static_cast<unsigned char>(
         (static_cast<int>(a[y, x]) +
          static_cast<int>(b[y, x]) +
          static_cast<int>(c[y, x])) / 3

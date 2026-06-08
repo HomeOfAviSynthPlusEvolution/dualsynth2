@@ -2,18 +2,45 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/mdspan.hpp>
+#include <cstddef>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 namespace {
 
+ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+  return ds::VideoFrameView{
+    ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+    1,
+    std::array<ds::PlaneView, 4>{
+      ds::PlaneView{data, stride, width, height},
+      ds::PlaneView{},
+      ds::PlaneView{},
+      ds::PlaneView{}
+    }
+  };
+}
+
+ds::MutableVideoFrameView make_mutable_gray8_frame(unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+  return ds::MutableVideoFrameView{
+    ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+    1,
+    std::array<ds::MutablePlaneView, 4>{
+      ds::MutablePlaneView{data, stride, width, height},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{}
+    }
+  };
+}
+
 class FakeFrameProvider final : public ds::VideoFrameProvider {
 public:
   FakeFrameProvider(
-    ds::PlaneView2D<const unsigned char> a,
-    ds::PlaneView2D<const unsigned char> b,
-    ds::PlaneView2D<const unsigned char> c
+    ds::VideoFrameView a,
+    ds::VideoFrameView b,
+    ds::VideoFrameView c
   ) : frames_{a, b, c} {}
 
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
@@ -43,7 +70,7 @@ public:
   }
 
 private:
-  std::array<ds::PlaneView2D<const unsigned char>, 3> frames_;
+  std::array<ds::VideoFrameView, 3> frames_;
   std::array<int, 3> requested_inputs_{};
   std::array<int, 3> requested_frames_{};
   int request_count_ = 0;
@@ -133,15 +160,15 @@ TEST_CASE("AcceptanceTemporalAverage3 averages a[n-1], b[n], and c[n+1]") {
   std::array<unsigned char, 4> dst_storage{};
 
   FakeFrameProvider provider(
-    ds::make_plane_view(a_storage.data(), 2, 2, 2),
-    ds::make_plane_view(b_storage.data(), 2, 2, 2),
-    ds::make_plane_view(c_storage.data(), 2, 2, 2)
+    make_const_gray8_frame(a_storage.data(), 2, 2, 2),
+    make_const_gray8_frame(b_storage.data(), 2, 2, 2),
+    make_const_gray8_frame(c_storage.data(), 2, 2, 2)
   );
 
   ds::VideoProcessContext context{
     5,
     provider,
-    ds::make_plane_view(dst_storage.data(), 2, 2, 2)
+    make_mutable_gray8_frame(dst_storage.data(), 2, 2, 2)
   };
 
   const auto result = ds::acceptance::AcceptanceTemporalAverage3::process(context);

@@ -1,6 +1,11 @@
 #pragma once
 
+#include <dualsynth/format.hpp>
+#include <dualsynth/mdspan.hpp>
+
+#include <array>
 #include <cstddef>
+#include <stdexcept>
 
 namespace ds {
 
@@ -19,6 +24,59 @@ struct MutablePlaneView {
   int width;
   int height;
 };
+
+struct VideoFrameView {
+  VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
+  int plane_count = 0;
+  std::array<PlaneView, 4> planes{};
+
+  const PlaneView& plane(int index) const {
+    if (index < 0 || index >= plane_count) {
+      throw std::out_of_range("video plane index is out of range");
+    }
+    return planes[static_cast<std::size_t>(index)];
+  }
+};
+
+struct MutableVideoFrameView {
+  VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
+  int plane_count = 0;
+  std::array<MutablePlaneView, 4> planes{};
+
+  MutablePlaneView& plane(int index) {
+    if (index < 0 || index >= plane_count) {
+      throw std::out_of_range("video plane index is out of range");
+    }
+    return planes[static_cast<std::size_t>(index)];
+  }
+
+  const MutablePlaneView& plane(int index) const {
+    if (index < 0 || index >= plane_count) {
+      throw std::out_of_range("video plane index is out of range");
+    }
+    return planes[static_cast<std::size_t>(index)];
+  }
+};
+
+template <class T>
+PlaneView2D<const T> as_plane_view(const PlaneView& plane) {
+  return make_plane_view(
+    static_cast<const T*>(plane.data),
+    plane.width,
+    plane.height,
+    plane.stride_bytes
+  );
+}
+
+template <class T>
+PlaneView2D<T> as_plane_view(const MutablePlaneView& plane) {
+  return make_plane_view(
+    static_cast<T*>(plane.data),
+    plane.width,
+    plane.height,
+    plane.stride_bytes
+  );
+}
 
 class FrameHandle {
 public:

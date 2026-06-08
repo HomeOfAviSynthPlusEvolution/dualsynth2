@@ -4,15 +4,42 @@
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <dualsynth/mdspan.hpp>
 #include <dualsynth/reference/video_filters.hpp>
+#include <cstddef>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 namespace {
 
+ds::VideoFrameView make_const_gray8_frame(const unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+  return ds::VideoFrameView{
+    ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+    1,
+    std::array<ds::PlaneView, 4>{
+      ds::PlaneView{data, stride, width, height},
+      ds::PlaneView{},
+      ds::PlaneView{},
+      ds::PlaneView{}
+    }
+  };
+}
+
+ds::MutableVideoFrameView make_mutable_gray8_frame(unsigned char* data, int width, int height, std::ptrdiff_t stride) {
+  return ds::MutableVideoFrameView{
+    ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+    1,
+    std::array<ds::MutablePlaneView, 4>{
+      ds::MutablePlaneView{data, stride, width, height},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{},
+      ds::MutablePlaneView{}
+    }
+  };
+}
+
 class SingleFrameProvider final : public ds::VideoFrameProvider {
 public:
-  explicit SingleFrameProvider(ds::PlaneView2D<const unsigned char> src)
+  explicit SingleFrameProvider(ds::VideoFrameView src)
     : src_(src) {}
 
   ds::Result<ds::RequestedVideoFrame> get(int input_index, int frame_number) override {
@@ -32,7 +59,7 @@ public:
   }
 
 private:
-  ds::PlaneView2D<const unsigned char> src_;
+  ds::VideoFrameView src_;
   int requested_input_ = -1;
   int requested_frame_ = -1;
 };
@@ -201,12 +228,12 @@ TEST_CASE("Video filter dispatch helper requests and processes through descripto
 
   const std::array<unsigned char, 4> src_storage{0, 10, 127, 255};
   std::array<unsigned char, 4> dst_storage{};
-  SingleFrameProvider provider(ds::make_plane_view(src_storage.data(), 4, 1, 4));
+  SingleFrameProvider provider(make_const_gray8_frame(src_storage.data(), 4, 1, 4));
 
   const auto process_result = ds::process_video_filter<ds::reference::VideoInvert>(
     4,
     provider,
-    ds::make_plane_view(dst_storage.data(), 4, 1, 4)
+    make_mutable_gray8_frame(dst_storage.data(), 4, 1, 4)
   );
 
   REQUIRE(process_result.has_value());
