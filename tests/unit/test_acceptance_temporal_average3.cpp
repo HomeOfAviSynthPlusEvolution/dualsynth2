@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/acceptance/temporal_average3.hpp>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -66,6 +67,22 @@ TEST_CASE("AcceptanceTemporalAverage3 exposes descriptor metadata and initialize
   REQUIRE(result.value().output.width == 640);
   REQUIRE(result.value().output.height == 360);
   REQUIRE(result.value().output.num_frames == 12);
+}
+
+TEST_CASE("AcceptanceTemporalAverage3Bridge exposes host binding metadata") {
+  using Bridge = ds::acceptance::AcceptanceTemporalAverage3Bridge;
+
+  REQUIRE((std::is_same_v<Bridge::Core, ds::acceptance::AcceptanceTemporalAverage3>));
+  REQUIRE(std::string(Bridge::vs_name) == "AcceptanceTemporalAverage3");
+  REQUIRE(std::string(Bridge::vs_signature) == "a:vnode;b:vnode;c:vnode;");
+  REQUIRE(Bridge::vs_input_names.size() == 3);
+  REQUIRE(std::string(Bridge::vs_input_names[0]) == "a");
+  REQUIRE(std::string(Bridge::vs_input_names[1]) == "b");
+  REQUIRE(std::string(Bridge::vs_input_names[2]) == "c");
+  REQUIRE(std::string(Bridge::avs_name) == "DSAcceptanceTemporalAverage3");
+  REQUIRE(std::string(Bridge::avs_signature) == "ccc");
+  REQUIRE(Bridge::parity_source_index == 1);
+  REQUIRE(Bridge::forward_audio == false);
 }
 
 TEST_CASE("AcceptanceTemporalAverage3 rejects inputs with mismatched output info") {

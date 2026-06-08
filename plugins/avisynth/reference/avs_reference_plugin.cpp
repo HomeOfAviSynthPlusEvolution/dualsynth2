@@ -310,6 +310,17 @@ AVSValue create_video_filter(
   );
 }
 
+template <class Bridge>
+AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
+  return create_video_filter<typename Bridge::Core>(
+    args,
+    env,
+    Bridge::avs_format_error,
+    Bridge::parity_source_index,
+    Bridge::forward_audio
+  );
+}
+
 AVSValue __cdecl create_video_identity(AVSValue args, void*, IScriptEnvironment* env) {
   return create_video_filter<ds::reference::VideoIdentity>(
     args,
@@ -354,13 +365,7 @@ AVSValue __cdecl create_audio_gain(AVSValue args, void*, IScriptEnvironment* env
 }
 
 AVSValue __cdecl create_acceptance_temporal_average3(AVSValue args, void*, IScriptEnvironment* env) {
-  return create_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
-    args,
-    env,
-    "DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video",
-    1,
-    false
-  );
+  return create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(args, env);
 }
 
 } // namespace
@@ -374,7 +379,12 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   env->AddFunction("DSVideoIdentity", "c", create_video_identity, nullptr);
   env->AddFunction("DSVideoInvert", "c", create_video_invert, nullptr);
   env->AddFunction("DSVideoTranspose", "c", create_video_transpose, nullptr);
-  env->AddFunction("DSAcceptanceTemporalAverage3", "ccc", create_acceptance_temporal_average3, nullptr);
+  env->AddFunction(
+    ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_name,
+    ds::acceptance::AcceptanceTemporalAverage3Bridge::avs_signature,
+    create_acceptance_temporal_average3,
+    nullptr
+  );
   env->AddFunction("DSAudioTestTone", "i", create_audio_test_tone, nullptr);
   env->AddFunction("DSAudioGain", "cf", create_audio_gain, nullptr);
   return "DualSynth reference plugin";

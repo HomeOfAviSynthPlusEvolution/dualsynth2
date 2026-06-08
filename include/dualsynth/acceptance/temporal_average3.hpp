@@ -98,4 +98,28 @@ struct AcceptanceTemporalAverage3 {
   }
 };
 
+struct AcceptanceTemporalAverage3Bridge {
+  using Core = AcceptanceTemporalAverage3;
+
+  static constexpr const char* vs_name = "AcceptanceTemporalAverage3";
+  static constexpr const char* vs_signature = "a:vnode;b:vnode;c:vnode;";
+  static constexpr std::array<const char*, static_cast<std::size_t>(Core::input_count)> vs_input_names{
+    "a",
+    "b",
+    "c"
+  };
+
+  static constexpr const char* avs_name = "DSAcceptanceTemporalAverage3";
+  static constexpr const char* avs_signature = "ccc";
+
+  static constexpr const char* missing_input_error =
+    "DualSynth reference: missing required AcceptanceTemporalAverage3 clip";
+  static constexpr const char* vs_format_error =
+    "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video";
+  static constexpr const char* avs_format_error =
+    "DualSynth reference: DSAcceptanceTemporalAverage3 supports only Y8 video";
+  static constexpr std::size_t parity_source_index = 1;
+  static constexpr bool forward_audio = false;
+};
+
 } // namespace ds::acceptance

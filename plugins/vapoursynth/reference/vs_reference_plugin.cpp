@@ -349,6 +349,24 @@ void create_video_filter(
   );
 }
 
+template <class Bridge>
+void create_video_filter_bridge(
+  const VSMap* in,
+  VSMap* out,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  create_video_filter<typename Bridge::Core>(
+    in,
+    out,
+    core,
+    vsapi,
+    Bridge::vs_input_names,
+    Bridge::missing_input_error,
+    Bridge::vs_format_error
+  );
+}
+
 void VS_CC video_identity_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
   constexpr std::array<const char*, ds::reference::VideoIdentity::input_count> input_names{"clip"};
   create_video_filter<ds::reference::VideoIdentity>(
@@ -557,19 +575,11 @@ void VS_CC acceptance_temporal_average3_create(
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  constexpr std::array<const char*, ds::acceptance::AcceptanceTemporalAverage3::input_count> input_names{
-    "a",
-    "b",
-    "c"
-  };
-  create_video_filter<ds::acceptance::AcceptanceTemporalAverage3>(
+  create_video_filter_bridge<ds::acceptance::AcceptanceTemporalAverage3Bridge>(
     in,
     out,
     core,
-    vsapi,
-    input_names,
-    "DualSynth reference: missing required AcceptanceTemporalAverage3 clip",
-    "DualSynth reference: AcceptanceTemporalAverage3 supports only GRAY8 video"
+    vsapi
   );
 }
 
@@ -623,8 +633,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction(
-    "AcceptanceTemporalAverage3",
-    "a:vnode;b:vnode;c:vnode;",
+    ds::acceptance::AcceptanceTemporalAverage3Bridge::vs_name,
+    ds::acceptance::AcceptanceTemporalAverage3Bridge::vs_signature,
     "clip:vnode;",
     acceptance_temporal_average3_create,
     nullptr,
