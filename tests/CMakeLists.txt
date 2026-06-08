@@ -28,3 +28,17 @@ ds_apply_compiler_options(dualsynth_unit_tests)
 
 include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
+
+find_program(DS_VSPIPE_EXECUTABLE vspipe)
+
+if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
+  add_test(
+    NAME vs_testpattern_info
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      --info
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/testpattern_info.vpy
+      -
+  )
+endif()
