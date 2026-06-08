@@ -10,15 +10,6 @@ Result<bool> is_supported_video_format(const VideoFormat& format) {
     });
   }
 
-  if (format.sample_format == SampleFormat::UInt10 ||
-      format.sample_format == SampleFormat::UInt12 ||
-      format.sample_format == SampleFormat::UInt14) {
-    return Result<bool>::failure({
-      ErrorCode::UnsupportedFormat,
-      "logical 10/12/14-bit formats must be converted to uint16 or float32 before DualSynth"
-    });
-  }
-
   return Result<bool>::success(true);
 }
 
@@ -37,20 +28,11 @@ Result<SampleFormat> sample_format_from_depth(bool floating_point, int bits_per_
   case 8:
     return Result<SampleFormat>::success(SampleFormat::UInt8);
   case 10:
-    return Result<SampleFormat>::failure({
-      ErrorCode::UnsupportedFormat,
-      "logical 10-bit formats must be converted to uint16 or float32 before DualSynth"
-    });
+    return Result<SampleFormat>::success(SampleFormat::UInt10);
   case 12:
-    return Result<SampleFormat>::failure({
-      ErrorCode::UnsupportedFormat,
-      "logical 12-bit formats must be converted to uint16 or float32 before DualSynth"
-    });
+    return Result<SampleFormat>::success(SampleFormat::UInt12);
   case 14:
-    return Result<SampleFormat>::failure({
-      ErrorCode::UnsupportedFormat,
-      "logical 14-bit formats must be converted to uint16 or float32 before DualSynth"
-    });
+    return Result<SampleFormat>::success(SampleFormat::UInt14);
   case 16:
     return Result<SampleFormat>::success(SampleFormat::UInt16);
   default:
@@ -93,14 +75,13 @@ int bytes_per_sample(SampleFormat sample_format) {
   switch (sample_format) {
   case SampleFormat::UInt8:
     return 1;
+  case SampleFormat::UInt10:
+  case SampleFormat::UInt12:
+  case SampleFormat::UInt14:
   case SampleFormat::UInt16:
     return 2;
   case SampleFormat::Float32:
     return 4;
-  case SampleFormat::UInt10:
-  case SampleFormat::UInt12:
-  case SampleFormat::UInt14:
-    return 0;
   }
   return 0;
 }
@@ -109,14 +90,16 @@ int bits_per_sample(SampleFormat sample_format) {
   switch (sample_format) {
   case SampleFormat::UInt8:
     return 8;
+  case SampleFormat::UInt10:
+    return 10;
+  case SampleFormat::UInt12:
+    return 12;
+  case SampleFormat::UInt14:
+    return 14;
   case SampleFormat::UInt16:
     return 16;
   case SampleFormat::Float32:
     return 32;
-  case SampleFormat::UInt10:
-  case SampleFormat::UInt12:
-  case SampleFormat::UInt14:
-    return 0;
   }
   return 0;
 }

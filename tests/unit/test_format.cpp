@@ -13,7 +13,7 @@ TEST_CASE("Video format accepts modern planar formats") {
   REQUIRE(ds::is_supported_video_format(format).has_value());
 }
 
-TEST_CASE("Video format rejects logical 10-bit") {
+TEST_CASE("Video format accepts middle bit-depth planar formats") {
   const ds::VideoFormat format{
     ds::ColorFamily::Yuv,
     ds::SampleFormat::UInt10,
@@ -23,8 +23,7 @@ TEST_CASE("Video format rejects logical 10-bit") {
   };
 
   const auto result = ds::is_supported_video_format(format);
-  REQUIRE_FALSE(result.has_value());
-  REQUIRE(result.error().code == ds::ErrorCode::UnsupportedFormat);
+  REQUIRE(result.has_value());
 }
 
 TEST_CASE("Sample format maps modern storage depths") {
@@ -33,10 +32,10 @@ TEST_CASE("Sample format maps modern storage depths") {
   REQUIRE(ds::sample_format_from_depth(true, 32).value() == ds::SampleFormat::Float32);
 }
 
-TEST_CASE("Sample format rejects logical packed depths") {
-  REQUIRE(ds::sample_format_from_depth(false, 10).error().code == ds::ErrorCode::UnsupportedFormat);
-  REQUIRE(ds::sample_format_from_depth(false, 12).error().code == ds::ErrorCode::UnsupportedFormat);
-  REQUIRE(ds::sample_format_from_depth(false, 14).error().code == ds::ErrorCode::UnsupportedFormat);
+TEST_CASE("Sample format maps middle bit-depth storage formats") {
+  REQUIRE(ds::sample_format_from_depth(false, 10).value() == ds::SampleFormat::UInt10);
+  REQUIRE(ds::sample_format_from_depth(false, 12).value() == ds::SampleFormat::UInt12);
+  REQUIRE(ds::sample_format_from_depth(false, 14).value() == ds::SampleFormat::UInt14);
 }
 
 TEST_CASE("Video format can be built from host format components") {
@@ -52,17 +51,20 @@ TEST_CASE("Video format can be built from host format components") {
 
 TEST_CASE("Sample format reports byte width") {
   REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt8) == 1);
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt10) == 2);
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt12) == 2);
+  REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt14) == 2);
   REQUIRE(ds::bytes_per_sample(ds::SampleFormat::UInt16) == 2);
   REQUIRE(ds::bytes_per_sample(ds::SampleFormat::Float32) == 4);
 }
 
 TEST_CASE("Sample format reports bit depth") {
   REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt8) == 8);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt10) == 10);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt12) == 12);
+  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt14) == 14);
   REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt16) == 16);
   REQUIRE(ds::bits_per_sample(ds::SampleFormat::Float32) == 32);
-  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt10) == 0);
-  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt12) == 0);
-  REQUIRE(ds::bits_per_sample(ds::SampleFormat::UInt14) == 0);
 }
 
 TEST_CASE("Audio format stores sample type and channel count") {
