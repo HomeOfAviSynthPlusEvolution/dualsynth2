@@ -144,6 +144,8 @@ public:
     vi_.width = output.width;
     vi_.height = output.height;
     vi_.num_frames = output.num_frames;
+    vi_.fps_numerator = static_cast<unsigned>(output.fps.numerator);
+    vi_.fps_denominator = static_cast<unsigned>(output.fps.denominator);
     if (!forward_audio_) {
       initialize_no_audio(vi_);
     }
@@ -288,7 +290,13 @@ AVSValue create_video_filter(
     if (!vi.HasVideo() || !vi.IsColorSpace(VideoInfo::CS_Y8)) {
       env->ThrowError(format_error);
     }
-    input_infos[i] = ds::VideoInputInfo{vi.width, vi.height, vi.num_frames};
+    input_infos[i] = ds::VideoInputInfo{
+      vi.width,
+      vi.height,
+      vi.num_frames,
+      ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+      ds::FrameRate{vi.fps_numerator, vi.fps_denominator}
+    };
   }
 
   const auto collected = ds::collect_video_input_infos<Filter>(input_infos);

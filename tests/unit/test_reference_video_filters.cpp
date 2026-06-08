@@ -114,7 +114,15 @@ TEST_CASE("Reference video transpose swaps dimensions and double transpose resto
 }
 
 TEST_CASE("Reference video descriptors expose metadata and initialize output info") {
-  std::vector<ds::VideoInputInfo> input{ds::VideoInputInfo{13, 7, 3}};
+  const ds::VideoFormat input_format{
+    ds::ColorFamily::Rgb,
+    ds::SampleFormat::UInt16,
+    3,
+    0,
+    0
+  };
+  const ds::FrameRate input_fps{30000, 1001};
+  std::vector<ds::VideoInputInfo> input{ds::VideoInputInfo{13, 7, 3, input_format, input_fps}};
 
   const auto identity_init = ds::init_video_filter<ds::reference::VideoIdentity>(input);
   const auto transpose_init = ds::init_video_filter<ds::reference::VideoTranspose>(input);
@@ -125,6 +133,8 @@ TEST_CASE("Reference video descriptors expose metadata and initialize output inf
   REQUIRE(identity_init.value().output.width == 13);
   REQUIRE(identity_init.value().output.height == 7);
   REQUIRE(identity_init.value().output.num_frames == 3);
+  REQUIRE(identity_init.value().output.format == input_format);
+  REQUIRE(identity_init.value().output.fps == input_fps);
 
   REQUIRE(std::string(ds::reference::VideoTranspose::name) == "VideoTranspose");
   REQUIRE(ds::reference::VideoTranspose::input_count == 1);
@@ -132,6 +142,8 @@ TEST_CASE("Reference video descriptors expose metadata and initialize output inf
   REQUIRE(transpose_init.value().output.width == 7);
   REQUIRE(transpose_init.value().output.height == 13);
   REQUIRE(transpose_init.value().output.num_frames == 3);
+  REQUIRE(transpose_init.value().output.format == input_format);
+  REQUIRE(transpose_init.value().output.fps == input_fps);
 }
 
 TEST_CASE("VideoTransposeBridge exposes host binding metadata") {

@@ -64,7 +64,7 @@ inline Result<VideoInitResult> init_single_input_same_size(VideoInitContext& con
 
   const VideoInputInfo& input = context.inputs[0];
   return Result<VideoInitResult>::success(
-    VideoInitResult{VideoOutputInfo{input.width, input.height, input.num_frames}}
+    VideoInitResult{VideoOutputInfo{input.width, input.height, input.num_frames, input.format, input.fps}}
   );
 }
 
@@ -77,7 +77,7 @@ inline Result<VideoInitResult> init_single_input_transposed(VideoInitContext& co
 
   const VideoInputInfo& input = context.inputs[0];
   return Result<VideoInitResult>::success(
-    VideoInitResult{VideoOutputInfo{input.height, input.width, input.num_frames}}
+    VideoInitResult{VideoOutputInfo{input.height, input.width, input.num_frames, input.format, input.fps}}
   );
 }
 

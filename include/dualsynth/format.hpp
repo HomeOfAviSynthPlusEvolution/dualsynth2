@@ -24,6 +24,8 @@ struct VideoFormat {
   int plane_count;
   int subsampling_w;
   int subsampling_h;
+
+  friend constexpr bool operator==(const VideoFormat&, const VideoFormat&) = default;
 };
 
 enum class AudioSampleFormat {
@@ -37,6 +39,8 @@ struct AudioFormat {
   AudioSampleFormat sample_format;
   int sample_rate;
   int channels;
+
+  friend constexpr bool operator==(const AudioFormat&, const AudioFormat&) = default;
 };
 
 Result<bool> is_supported_video_format(const VideoFormat& format);

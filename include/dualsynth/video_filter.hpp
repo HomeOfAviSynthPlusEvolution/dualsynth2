@@ -1,26 +1,39 @@
 #pragma once
 
 #include <dualsynth/error.hpp>
+#include <dualsynth/format.hpp>
 #include <dualsynth/plane_span.hpp>
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
 namespace ds {
 
+struct FrameRate {
+  std::int64_t numerator = 0;
+  std::int64_t denominator = 1;
+
+  friend constexpr bool operator==(const FrameRate&, const FrameRate&) = default;
+};
+
 struct VideoInputInfo {
   int width;
   int height;
   int num_frames;
+  VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
+  FrameRate fps{};
 };
 
 struct VideoOutputInfo {
   int width;
   int height;
   int num_frames;
+  VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
+  FrameRate fps{};
 };
 
 struct VideoInitContext {

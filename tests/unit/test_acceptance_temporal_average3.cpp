@@ -51,10 +51,18 @@ private:
 } // namespace
 
 TEST_CASE("AcceptanceTemporalAverage3 exposes descriptor metadata and initializes output info") {
+  const ds::VideoFormat input_format{
+    ds::ColorFamily::Gray,
+    ds::SampleFormat::UInt16,
+    1,
+    0,
+    0
+  };
+  const ds::FrameRate input_fps{24000, 1001};
   std::vector<ds::VideoInputInfo> inputs{
-    ds::VideoInputInfo{640, 360, 12},
-    ds::VideoInputInfo{640, 360, 12},
-    ds::VideoInputInfo{640, 360, 12}
+    ds::VideoInputInfo{640, 360, 12, input_format, input_fps},
+    ds::VideoInputInfo{640, 360, 12, input_format, input_fps},
+    ds::VideoInputInfo{640, 360, 12, input_format, input_fps}
   };
   ds::VideoInitContext context{inputs};
 
@@ -67,6 +75,8 @@ TEST_CASE("AcceptanceTemporalAverage3 exposes descriptor metadata and initialize
   REQUIRE(result.value().output.width == 640);
   REQUIRE(result.value().output.height == 360);
   REQUIRE(result.value().output.num_frames == 12);
+  REQUIRE(result.value().output.format == input_format);
+  REQUIRE(result.value().output.fps == input_fps);
 }
 
 TEST_CASE("AcceptanceTemporalAverage3Bridge exposes host binding metadata") {

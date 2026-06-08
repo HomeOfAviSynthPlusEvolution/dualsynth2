@@ -298,7 +298,13 @@ void create_video_filter(
       return;
     }
 
-    input_infos[i] = ds::VideoInputInfo{input_info->width, input_info->height, input_info->numFrames};
+    input_infos[i] = ds::VideoInputInfo{
+      input_info->width,
+      input_info->height,
+      input_info->numFrames,
+      ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+      ds::FrameRate{input_info->fpsNum, input_info->fpsDen}
+    };
   }
 
   const auto collected = ds::collect_video_input_infos<Filter>(input_infos);
@@ -328,6 +334,8 @@ void create_video_filter(
   data->video_info.width = init_result.value().output.width;
   data->video_info.height = init_result.value().output.height;
   data->video_info.numFrames = init_result.value().output.num_frames;
+  data->video_info.fpsNum = init_result.value().output.fps.numerator;
+  data->video_info.fpsDen = init_result.value().output.fps.denominator;
   data->request = ds::request_video_filter<Filter>;
   data->process = ds::process_video_filter<Filter>;
 

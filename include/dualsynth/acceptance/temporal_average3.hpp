@@ -85,7 +85,9 @@ struct AcceptanceTemporalAverage3 {
     }
 
     return Result<VideoInitResult>::success(
-      VideoInitResult{VideoOutputInfo{output.width, output.height, output.num_frames}}
+      VideoInitResult{
+        VideoOutputInfo{output.width, output.height, output.num_frames, output.format, output.fps}
+      }
     );
   }
 
