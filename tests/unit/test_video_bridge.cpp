@@ -78,3 +78,47 @@ TEST_CASE("Video bridge signatures are generated from host-specific parameter me
   );
   REQUIRE(avs_signature.value() == "c[sigma]f[slocation]s[y]i[zmean]b[mode]s[slocation()]f");
 }
+
+TEST_CASE("Video request context deduplicates and clamps requested frames") {
+  std::vector<ds::VideoFrameRequest> requests;
+  const std::vector<ds::VideoInputInfo> inputs{
+    ds::VideoInputInfo{16, 9, 5}
+  };
+  ds::VideoRequestContext context{3, requests, inputs};
+
+  context.request_frame(0, 3);
+  context.request_frame(0, 3);
+  context.request_frame_clamped(0, -2);
+  context.request_frame_clamped(0, 9);
+
+  REQUIRE(requests.size() == 3);
+  REQUIRE(requests[0] == ds::VideoFrameRequest{0, 3});
+  REQUIRE(requests[1] == ds::VideoFrameRequest{0, 0});
+  REQUIRE(requests[2] == ds::VideoFrameRequest{0, 4});
+}
+
+TEST_CASE("Requested frame provider returns a clear error for missing frames") {
+  const std::uint8_t pixel = 17;
+  const ds::VideoFrameView frame{
+    ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+    1,
+    std::array<ds::PlaneView, 4>{
+      ds::PlaneView{&pixel, 1, 1, 1},
+      ds::PlaneView{},
+      ds::PlaneView{},
+      ds::PlaneView{}
+    }
+  };
+  const std::vector<ds::RequestedVideoFrame> frames{
+    ds::RequestedVideoFrame{1, 4, frame}
+  };
+  ds::RequestedVideoFrameProvider provider{frames};
+
+  const auto found = provider.get(1, 4);
+  const auto missing = provider.get(0, 4);
+
+  REQUIRE(found.has_value());
+  REQUIRE(found.value().frame.plane(0).data == &pixel);
+  REQUIRE_FALSE(missing.has_value());
+  REQUIRE(missing.error().code == ds::ErrorCode::InvalidArgument);
+}

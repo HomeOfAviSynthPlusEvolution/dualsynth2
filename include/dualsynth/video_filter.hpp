@@ -6,6 +6,7 @@
 #include <dualsynth/param.hpp>
 
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -88,6 +89,8 @@ struct RequestedVideoFrame {
 struct VideoFrameRequest {
   int input_index;
   int frame_number;
+
+  friend constexpr bool operator==(const VideoFrameRequest&, const VideoFrameRequest&) = default;
 };
 
 class VideoFrameProvider {
@@ -101,10 +104,57 @@ struct VideoRequestResult {};
 struct VideoRequestContext {
   int output_frame;
   std::vector<VideoFrameRequest>& requests;
+  std::span<const VideoInputInfo> inputs{};
 
   void request_frame(int input_index, int frame_number) {
-    requests.push_back(VideoFrameRequest{input_index, frame_number});
+    const VideoFrameRequest request{input_index, frame_number};
+    if (std::find(requests.begin(), requests.end(), request) == requests.end()) {
+      requests.push_back(request);
+    }
   }
+
+  void request_frame_clamped(int input_index, int frame_number) {
+    if (input_index < 0 || static_cast<std::size_t>(input_index) >= inputs.size()) {
+      request_frame(input_index, frame_number);
+      return;
+    }
+
+    const int num_frames = inputs[static_cast<std::size_t>(input_index)].num_frames;
+    if (num_frames <= 0) {
+      request_frame(input_index, 0);
+      return;
+    }
+    if (frame_number < 0) {
+      request_frame(input_index, 0);
+      return;
+    }
+    if (frame_number >= num_frames) {
+      request_frame(input_index, num_frames - 1);
+      return;
+    }
+    request_frame(input_index, frame_number);
+  }
+};
+
+class RequestedVideoFrameProvider final : public VideoFrameProvider {
+public:
+  explicit RequestedVideoFrameProvider(std::span<const RequestedVideoFrame> frames)
+    : frames_(frames) {}
+
+  Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
+    for (const auto& frame : frames_) {
+      if (frame.input_index == input_index && frame.frame_number == frame_number) {
+        return Result<RequestedVideoFrame>::success(frame);
+      }
+    }
+
+    return Result<RequestedVideoFrame>::failure(
+      Error{ErrorCode::InvalidArgument, "DualSynth: requested video frame was not provided"}
+    );
+  }
+
+private:
+  std::span<const RequestedVideoFrame> frames_;
 };
 
 struct VideoProcessResult {};
@@ -145,6 +195,16 @@ template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
   VideoInitContext context{inputs, &params};
   return Filter::init(context);
+}
+
+template <class Filter>
+Result<VideoRequestResult> request_video_filter(
+  int output_frame,
+  std::span<const VideoInputInfo> inputs,
+  std::vector<VideoFrameRequest>& requests
+) {
+  VideoRequestContext context{output_frame, requests, inputs};
+  return Filter::request(context);
 }
 
 template <class Filter>
