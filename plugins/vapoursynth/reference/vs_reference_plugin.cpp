@@ -1,9 +1,12 @@
 #include <vapoursynth/VapourSynth4.h>
 
+#include <dualsynth/reference/audio_filters.hpp>
 #include <dualsynth/reference/video_filters.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace {
 
@@ -20,6 +23,16 @@ struct VideoFilterData {
   VSNode* node = nullptr;
   VSVideoInfo video_info{};
   VideoOperation operation = VideoOperation::Identity;
+};
+
+struct AudioSourceData {
+  VSAudioInfo audio_info{};
+};
+
+struct AudioGainData {
+  VSNode* node = nullptr;
+  VSAudioInfo audio_info{};
+  double gain = 1.0;
 };
 
 int get_required_int(const VSMap* in, const char* key, VSMap* out, const VSAPI* vsapi) {
@@ -230,6 +243,168 @@ void VS_CC video_invert_create(const VSMap* in, VSMap* out, void*, VSCore* core,
   create_video_filter(in, out, core, vsapi, VideoOperation::Invert, "VideoInvert");
 }
 
+int audio_frame_count(int64_t num_samples) {
+  return static_cast<int>((num_samples + VS_AUDIO_FRAME_SAMPLES - 1) / VS_AUDIO_FRAME_SAMPLES);
+}
+
+const VSFrame* VS_CC audio_test_tone_get_frame(
+  int n,
+  int activation_reason,
+  void* instance_data,
+  void**,
+  VSFrameContext*,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  if (activation_reason != arInitial && activation_reason != arAllFramesReady) {
+    return nullptr;
+  }
+
+  const auto* data = static_cast<const AudioSourceData*>(instance_data);
+  const int64_t start = static_cast<int64_t>(n) * VS_AUDIO_FRAME_SAMPLES;
+  const int remaining = static_cast<int>(std::max<int64_t>(0, data->audio_info.numSamples - start));
+  const int sample_count = std::min(VS_AUDIO_FRAME_SAMPLES, remaining);
+
+  VSFrame* frame = vsapi->newAudioFrame(&data->audio_info.format, sample_count, nullptr, core);
+  auto* samples = reinterpret_cast<float*>(vsapi->getWritePtr(frame, 0));
+
+  for (int i = 0; i < sample_count; ++i) {
+    samples[i] = static_cast<float>(((start + i) % 256) / 255.0);
+  }
+
+  return frame;
+}
+
+void VS_CC audio_test_tone_free(void* instance_data, VSCore*, const VSAPI*) {
+  delete static_cast<AudioSourceData*>(instance_data);
+}
+
+void VS_CC audio_test_tone_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
+  const int samples = get_required_int(in, "samples", out, vsapi);
+  if (vsapi->mapGetError(out) != nullptr) {
+    return;
+  }
+
+  if (samples <= 0) {
+    vsapi->mapSetError(out, "DualSynth reference: samples must be positive");
+    return;
+  }
+
+  auto* data = new AudioSourceData();
+  const uint64_t mono_layout = 1ULL << acFrontCenter;
+  if (!vsapi->queryAudioFormat(&data->audio_info.format, stFloat, 32, mono_layout, core)) {
+    delete data;
+    vsapi->mapSetError(out, "DualSynth reference: failed to create mono Float32 audio format");
+    return;
+  }
+
+  data->audio_info.sampleRate = 48000;
+  data->audio_info.numSamples = samples;
+  data->audio_info.numFrames = audio_frame_count(samples);
+
+  vsapi->createAudioFilter(
+    out,
+    "AudioTestTone",
+    &data->audio_info,
+    audio_test_tone_get_frame,
+    audio_test_tone_free,
+    fmParallel,
+    nullptr,
+    0,
+    data,
+    core
+  );
+}
+
+const VSFrame* VS_CC audio_gain_get_frame(
+  int n,
+  int activation_reason,
+  void* instance_data,
+  void**,
+  VSFrameContext* frame_ctx,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  auto* data = static_cast<AudioGainData*>(instance_data);
+
+  if (activation_reason == arInitial) {
+    vsapi->requestFrameFilter(n, data->node, frame_ctx);
+    return nullptr;
+  }
+
+  if (activation_reason != arAllFramesReady) {
+    return nullptr;
+  }
+
+  const VSFrame* src = vsapi->getFrameFilter(n, data->node, frame_ctx);
+  const int sample_count = vsapi->getFrameLength(src);
+  VSFrame* dst = vsapi->newAudioFrame(&data->audio_info.format, sample_count, src, core);
+
+  const auto* src_samples = reinterpret_cast<const float*>(vsapi->getReadPtr(src, 0));
+  auto* dst_samples = reinterpret_cast<float*>(vsapi->getWritePtr(dst, 0));
+  ds::reference::gain_samples(
+    std::span<const float>(src_samples, static_cast<std::size_t>(sample_count)),
+    std::span<float>(dst_samples, static_cast<std::size_t>(sample_count)),
+    data->gain
+  );
+
+  vsapi->freeFrame(src);
+  return dst;
+}
+
+void VS_CC audio_gain_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
+  auto* data = static_cast<AudioGainData*>(instance_data);
+  if (data->node != nullptr) {
+    vsapi->freeNode(data->node);
+  }
+  delete data;
+}
+
+void VS_CC audio_gain_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* vsapi) {
+  int error = 0;
+  VSNode* node = vsapi->mapGetNode(in, "clip", 0, &error);
+  if (error != peSuccess || node == nullptr) {
+    vsapi->mapSetError(out, "DualSynth reference: missing required audio clip");
+    return;
+  }
+
+  const VSAudioInfo* input_info = vsapi->getAudioInfo(node);
+  if (input_info->format.sampleType != stFloat ||
+      input_info->format.bitsPerSample != 32 ||
+      input_info->format.numChannels != 1) {
+    vsapi->freeNode(node);
+    vsapi->mapSetError(out, "DualSynth reference: only mono Float32 audio is supported by AudioGain");
+    return;
+  }
+
+  error = 0;
+  const double gain = vsapi->mapGetFloat(in, "gain", 0, &error);
+  if (error != peSuccess) {
+    vsapi->freeNode(node);
+    vsapi->mapSetError(out, "DualSynth reference: missing required gain argument");
+    return;
+  }
+
+  auto* data = new AudioGainData();
+  data->node = node;
+  data->audio_info = *input_info;
+  data->gain = gain;
+
+  const VSFilterDependency dependency{node, rpStrictSpatial};
+  vsapi->createAudioFilter(
+    out,
+    "AudioGain",
+    &data->audio_info,
+    audio_gain_get_frame,
+    audio_gain_free,
+    fmParallel,
+    &dependency,
+    1,
+    data,
+    core
+  );
+}
+
 } // namespace
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi) {
@@ -266,6 +441,24 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     "clip:vnode;",
     "clip:vnode;",
     video_invert_create,
+    nullptr,
+    plugin
+  );
+
+  vspapi->registerFunction(
+    "AudioTestTone",
+    "samples:int;",
+    "clip:anode;",
+    audio_test_tone_create,
+    nullptr,
+    plugin
+  );
+
+  vspapi->registerFunction(
+    "AudioGain",
+    "clip:anode;gain:float;",
+    "clip:anode;",
+    audio_gain_create,
     nullptr,
     plugin
   );

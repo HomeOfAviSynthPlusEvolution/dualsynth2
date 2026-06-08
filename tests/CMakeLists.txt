@@ -59,4 +59,13 @@ if(TARGET dualsynth_reference_vs AND DS_VSPIPE_EXECUTABLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/video_invert_process.vpy
       --
   )
+
+  add_test(
+    NAME vs_audio_gain_process
+    COMMAND
+      ${DS_VSPIPE_EXECUTABLE}
+      --arg plugin=$<TARGET_FILE:dualsynth_reference_vs>
+      ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/audio_gain_process.vpy
+      --
+  )
 endif()
