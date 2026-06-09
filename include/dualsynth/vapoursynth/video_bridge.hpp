@@ -194,6 +194,7 @@ struct VideoFilterData {
   std::array<VideoInputInfo, input_count> input_infos{};
   VSVideoInfo video_info{};
   VideoFormat output_format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
+  VideoFilterState<Filter> state{};
 };
 
 template <class Bridge>
@@ -282,7 +283,12 @@ const VSFrame* VS_CC video_filter_get_frame(
   try {
     if (activation_reason == arInitial) {
       std::vector<VideoFrameRequest> requests;
-      auto request_result = request_video_filter<Filter>(n, data->input_infos, requests);
+      auto request_result = request_video_filter<Filter>(
+        n,
+        data->input_infos,
+        requests,
+        data->state
+      );
       if (!request_result.has_value()) {
         vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
         return nullptr;
@@ -348,7 +354,8 @@ const VSFrame* VS_CC video_filter_get_frame(
     const auto result = process_video_filter<Filter>(
       n,
       provider,
-      make_mutable_video_frame_view(dst, data->output_format, vsapi)
+      make_mutable_video_frame_view(dst, data->output_format, vsapi),
+      data->state
     );
 
     if (!result.has_value()) {
@@ -403,6 +410,12 @@ bool accepts_video_format(VideoFormat format) {
   }
 }
 
+inline Result<ParamValues> read_params(
+  const VSMap* in,
+  const FilterDescriptor& descriptor,
+  const VSAPI* vsapi
+);
+
 template <VideoBridge Bridge>
 void create_video_filter_bridge(
   const VSMap* in,
@@ -452,13 +465,25 @@ void create_video_filter_bridge(
       return;
     }
 
-    const auto init_result = init_video_filter<Filter>(collected.value());
+    const auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
+      if constexpr (requires { Bridge::descriptor(); }) {
+        auto params = read_params(in, Bridge::descriptor(), vsapi);
+        if (!params.has_value()) {
+          return Result<VideoFilterInstance<Filter>>::failure(params.error());
+        }
+        return init_video_filter_instance<Filter>(collected.value(), params.value());
+      } else {
+        return init_video_filter_instance<Filter>(collected.value());
+      }
+    }();
     if (!init_result.has_value()) {
       free_video_filter_nodes(data, vsapi);
       delete data;
       vsapi->mapSetError(out, init_result.error().message.c_str());
       return;
     }
+
+    data->state = std::move(init_result.value().state);
 
     VSVideoFormat output_format{};
     if (!query_video_format(init_result.value().output.format, output_format, core, vsapi)) {

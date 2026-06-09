@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/global_lock.hpp>
 #include <dualsynth/param.hpp>
 
 #include <array>
@@ -10,7 +11,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace ds {
@@ -41,10 +44,40 @@ struct VideoOutputInfo {
 struct VideoInitContext {
   std::span<const VideoInputInfo> inputs;
   const ParamValues* params = nullptr;
+  HostGlobalLockCallbacks host_global_locks{};
 };
 
 struct VideoInitResult {
   VideoOutputInfo output;
+};
+
+template <class State>
+struct VideoInitStateResult {
+  VideoOutputInfo output;
+  State state;
+};
+
+struct StatelessVideoFilterState {};
+
+template <class Filter, class = void>
+struct VideoFilterStateTraits {
+  using type = StatelessVideoFilterState;
+  static constexpr bool stateful = false;
+};
+
+template <class Filter>
+struct VideoFilterStateTraits<Filter, std::void_t<typename Filter::State>> {
+  using type = typename Filter::State;
+  static constexpr bool stateful = true;
+};
+
+template <class Filter>
+using VideoFilterState = typename VideoFilterStateTraits<Filter>::type;
+
+template <class Filter>
+struct VideoFilterInstance {
+  VideoOutputInfo output;
+  VideoFilterState<Filter> state;
 };
 
 enum class OutputOriginKind {
@@ -105,6 +138,7 @@ struct VideoRequestContext {
   int output_frame;
   std::vector<VideoFrameRequest>& requests;
   std::span<const VideoInputInfo> inputs{};
+  const void* filter_state = nullptr;
 
   void request_frame(int input_index, int frame_number) {
     const VideoFrameRequest request{input_index, frame_number};
@@ -133,6 +167,14 @@ struct VideoRequestContext {
       return;
     }
     request_frame(input_index, frame_number);
+  }
+
+  template <class State>
+  const State& state() const {
+    if (!filter_state) {
+      throw std::logic_error("DualSynth: video filter state is not available");
+    }
+    return *static_cast<const State*>(filter_state);
   }
 };
 
@@ -184,6 +226,15 @@ struct VideoProcessContext {
   int output_frame;
   VideoFrameProvider& frames;
   MutableVideoFrameView dst;
+  void* filter_state = nullptr;
+
+  template <class State>
+  State& state() const {
+    if (!filter_state) {
+      throw std::logic_error("DualSynth: video filter state is not available");
+    }
+    return *static_cast<State*>(filter_state);
+  }
 };
 
 template <class Filter>
@@ -208,24 +259,79 @@ collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
-  VideoInitContext context{inputs, nullptr};
+  VideoInitContext context{inputs, nullptr, {}};
   return Filter::init(context);
 }
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
-  VideoInitContext context{inputs, &params};
+  VideoInitContext context{inputs, &params, {}};
   return Filter::init(context);
+}
+
+template <class Filter>
+Result<VideoFilterInstance<Filter>> init_video_filter_instance(
+  std::span<const VideoInputInfo> inputs,
+  const ParamValues* params,
+  HostGlobalLockCallbacks host_global_locks = {}
+) {
+  VideoInitContext context{inputs, params, host_global_locks};
+  if constexpr (VideoFilterStateTraits<Filter>::stateful) {
+    auto initialized = Filter::init(context);
+    if (!initialized.has_value()) {
+      return Result<VideoFilterInstance<Filter>>::failure(initialized.error());
+    }
+    return Result<VideoFilterInstance<Filter>>::success(
+      VideoFilterInstance<Filter>{
+        initialized.value().output,
+        std::move(initialized.value().state)
+      }
+    );
+  } else {
+    auto initialized = Filter::init(context);
+    if (!initialized.has_value()) {
+      return Result<VideoFilterInstance<Filter>>::failure(initialized.error());
+    }
+    return Result<VideoFilterInstance<Filter>>::success(
+      VideoFilterInstance<Filter>{initialized.value().output, StatelessVideoFilterState{}}
+    );
+  }
+}
+
+template <class Filter>
+Result<VideoFilterInstance<Filter>> init_video_filter_instance(
+  std::span<const VideoInputInfo> inputs
+) {
+  return init_video_filter_instance<Filter>(inputs, nullptr);
+}
+
+template <class Filter>
+Result<VideoFilterInstance<Filter>> init_video_filter_instance(
+  std::span<const VideoInputInfo> inputs,
+  const ParamValues& params
+) {
+  return init_video_filter_instance<Filter>(inputs, &params);
 }
 
 template <class Filter>
 Result<VideoRequestResult> request_video_filter(
   int output_frame,
   std::span<const VideoInputInfo> inputs,
-  std::vector<VideoFrameRequest>& requests
+  std::vector<VideoFrameRequest>& requests,
+  const VideoFilterState<Filter>* state = nullptr
 ) {
-  VideoRequestContext context{output_frame, requests, inputs};
+  VideoRequestContext context{output_frame, requests, inputs, state};
   return Filter::request(context);
+}
+
+template <class Filter>
+Result<VideoRequestResult> request_video_filter(
+  int output_frame,
+  std::span<const VideoInputInfo> inputs,
+  std::vector<VideoFrameRequest>& requests,
+  const VideoFilterState<Filter>& state
+) {
+  return request_video_filter<Filter>(output_frame, inputs, requests, &state);
 }
 
 template <class Filter>
@@ -241,10 +347,21 @@ template <class Filter>
 Result<VideoProcessResult> process_video_filter(
   int output_frame,
   VideoFrameProvider& frames,
-  MutableVideoFrameView dst
+  MutableVideoFrameView dst,
+  VideoFilterState<Filter>* state = nullptr
 ) {
-  VideoProcessContext context{output_frame, frames, dst};
+  VideoProcessContext context{output_frame, frames, dst, state};
   return Filter::process(context);
+}
+
+template <class Filter>
+Result<VideoProcessResult> process_video_filter(
+  int output_frame,
+  VideoFrameProvider& frames,
+  MutableVideoFrameView dst,
+  VideoFilterState<Filter>& state
+) {
+  return process_video_filter<Filter>(output_frame, frames, dst, &state);
 }
 
 } // namespace ds

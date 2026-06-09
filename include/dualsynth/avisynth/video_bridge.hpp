@@ -2,6 +2,7 @@
 
 #include <avisynth.h>
 
+#include <dualsynth/avisynth/global_lock.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/param.hpp>
@@ -516,12 +517,14 @@ public:
     std::array<PClip, input_count> clips,
     std::array<VideoInputInfo, input_count> input_infos,
     VideoOutputInfo output,
+    VideoFilterState<Filter> state,
     MtMode mt_mode,
     std::size_t parity_source_index,
     bool forward_audio
   ) : clips_(std::move(clips)),
       input_infos_(input_infos),
       output_format_(output.format),
+      state_(std::move(state)),
       mt_mode_(mt_mode),
       parity_source_index_(parity_source_index),
       forward_audio_(forward_audio) {
@@ -538,7 +541,8 @@ public:
       const auto result = process_video_filter<Filter>(
         n,
         provider,
-        make_mutable_video_frame_view(dst, output_format_)
+        make_mutable_video_frame_view(dst, output_format_),
+        state_
       );
 
       if (!result.has_value()) {
@@ -606,6 +610,7 @@ private:
   std::array<VideoInputInfo, input_count> input_infos_;
   VideoInfo vi_{};
   VideoFormat output_format_;
+  VideoFilterState<Filter> state_;
   MtMode mt_mode_;
   std::size_t parity_source_index_;
   bool forward_audio_;
@@ -619,6 +624,11 @@ bool accepts_video_format(VideoFormat format) {
     return true;
   }
 }
+
+inline Result<ParamValues> read_params(
+  const AVSValue& args,
+  const FilterDescriptor& descriptor
+);
 
 template <VideoBridge Bridge>
 AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
@@ -651,7 +661,25 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
       env->ThrowError(collected.error().message.c_str());
     }
 
-    const auto init_result = init_video_filter<Filter>(collected.value());
+    const auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
+      if constexpr (requires { Bridge::descriptor(); }) {
+        auto params = read_params(args, Bridge::descriptor());
+        if (!params.has_value()) {
+          return Result<VideoFilterInstance<Filter>>::failure(params.error());
+        }
+        return init_video_filter_instance<Filter>(
+          collected.value(),
+          &params.value(),
+          host_global_lock_callbacks(env)
+        );
+      } else {
+        return init_video_filter_instance<Filter>(
+          collected.value(),
+          nullptr,
+          host_global_lock_callbacks(env)
+        );
+      }
+    }();
     if (!init_result.has_value()) {
       env->ThrowError(init_result.error().message.c_str());
     }
@@ -669,6 +697,7 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
       std::move(clips),
       input_infos,
       output,
+      std::move(init_result.value().state),
       bridge_mt_mode<Bridge>(),
       Bridge::parity_source_index,
       Bridge::forward_audio
