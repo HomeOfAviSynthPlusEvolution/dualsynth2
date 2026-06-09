@@ -237,6 +237,21 @@ struct VideoProcessContext {
   }
 };
 
+struct VideoCacheHintsContext {
+  int cachehints;
+  int frame_range;
+  int default_response = 0;
+  void* filter_state = nullptr;
+
+  template <class State>
+  State& state() const {
+    if (!filter_state) {
+      throw std::logic_error("DualSynth: video filter state is not available");
+    }
+    return *static_cast<State*>(filter_state);
+  }
+};
+
 template <class Filter>
 Result<std::array<VideoInputInfo, static_cast<std::size_t>(Filter::input_count)>>
 collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
@@ -362,6 +377,31 @@ Result<VideoProcessResult> process_video_filter(
   VideoFilterState<Filter>& state
 ) {
   return process_video_filter<Filter>(output_frame, frames, dst, &state);
+}
+
+template <class Filter>
+int cache_hints_video_filter(
+  int cachehints,
+  int frame_range,
+  int default_response,
+  VideoFilterState<Filter>* state = nullptr
+) {
+  if constexpr (requires(VideoCacheHintsContext& context) { Filter::cache_hints(context); }) {
+    VideoCacheHintsContext context{cachehints, frame_range, default_response, state};
+    return Filter::cache_hints(context);
+  } else {
+    return default_response;
+  }
+}
+
+template <class Filter>
+int cache_hints_video_filter(
+  int cachehints,
+  int frame_range,
+  int default_response,
+  VideoFilterState<Filter>& state
+) {
+  return cache_hints_video_filter<Filter>(cachehints, frame_range, default_response, &state);
 }
 
 } // namespace ds

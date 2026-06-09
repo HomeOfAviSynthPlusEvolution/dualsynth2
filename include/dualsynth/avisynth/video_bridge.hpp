@@ -581,7 +581,12 @@ public:
   }
 
   int __stdcall SetCacheHints(int cachehints, int frame_range) override {
-    return cache_hint_response(cachehints, frame_range, mt_mode_);
+    return cache_hints_video_filter<Filter>(
+      cachehints,
+      frame_range,
+      cache_hint_response(cachehints, frame_range, mt_mode_),
+      state_
+    );
   }
 
   const VideoInfo& __stdcall GetVideoInfo() override {
