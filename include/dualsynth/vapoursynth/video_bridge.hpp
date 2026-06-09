@@ -465,7 +465,7 @@ void create_video_filter_bridge(
       return;
     }
 
-    const auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
+    auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
       if constexpr (requires { Bridge::descriptor(); }) {
         auto params = read_params(in, Bridge::descriptor(), vsapi);
         if (!params.has_value()) {

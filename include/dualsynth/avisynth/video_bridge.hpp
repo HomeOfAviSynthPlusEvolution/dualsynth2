@@ -666,7 +666,7 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
       env->ThrowError(collected.error().message.c_str());
     }
 
-    const auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
+    auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
       if constexpr (requires { Bridge::descriptor(); }) {
         auto params = read_params(args, Bridge::descriptor());
         if (!params.has_value()) {
