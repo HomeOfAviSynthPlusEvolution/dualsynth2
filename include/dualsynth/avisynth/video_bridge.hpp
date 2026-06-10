@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,6 +39,16 @@ enum class MtMode {
   Serialized
 };
 
+inline constexpr int filter_mt_mode_interface_version = 8;
+inline constexpr bool compiled_with_filter_mt_mode =
+  AVISYNTH_INTERFACE_VERSION >= filter_mt_mode_interface_version;
+
+template <class Env>
+concept FilterMtModeRuntimeEnvironment = requires(Env* env, int version) {
+  env->CheckVersion(version);
+  { env->GetEnvProperty(AEP_VERSION) } -> std::convertible_to<std::size_t>;
+};
+
 inline ::MtMode host_mt_mode(MtMode mode) {
   switch (mode) {
   case MtMode::NiceFilter:
@@ -50,13 +61,45 @@ inline ::MtMode host_mt_mode(MtMode mode) {
   return MT_SERIALIZED;
 }
 
+template <class Env>
+inline bool runtime_matches_filter_mt_mode_abi(Env* env) noexcept {
+  if (!env) {
+    return false;
+  }
+
+  if constexpr (compiled_with_filter_mt_mode && FilterMtModeRuntimeEnvironment<Env>) {
+    try {
+      env->CheckVersion(filter_mt_mode_interface_version);
+      return env->GetEnvProperty(AEP_VERSION) ==
+        static_cast<std::size_t>(AVISYNTH_INTERFACE_VERSION);
+    } catch (...) {
+      return false;
+    }
+  } else {
+    return false;
+  }
+}
+
+inline bool runtime_supports_filter_mt_mode(IScriptEnvironment* env) noexcept {
+  return runtime_matches_filter_mt_mode_abi(env);
+}
+
 inline void set_filter_mt_mode(
   IScriptEnvironment2* env,
   const char* filter_name,
   MtMode mode,
   bool force = false
 ) {
-  env->SetFilterMTMode(filter_name, host_mt_mode(mode), force);
+  if constexpr (compiled_with_filter_mt_mode) {
+    if (runtime_supports_filter_mt_mode(static_cast<IScriptEnvironment*>(env))) {
+      env->SetFilterMTMode(filter_name, host_mt_mode(mode), force);
+    }
+  } else {
+    (void)env;
+    (void)filter_name;
+    (void)mode;
+    (void)force;
+  }
 }
 
 inline void set_filter_mt_mode(
@@ -65,9 +108,19 @@ inline void set_filter_mt_mode(
   MtMode mode,
   bool force = false
 ) {
-  // AviSynth+ keeps MT registration on IScriptEnvironment2 while plugin init
-  // still receives the ABI-stable base interface.
-  set_filter_mt_mode(static_cast<IScriptEnvironment2*>(env), filter_name, mode, force);
+  if constexpr (compiled_with_filter_mt_mode) {
+    if (runtime_supports_filter_mt_mode(env)) {
+      // AviSynth+ keeps MT registration on IScriptEnvironment2 while plugin
+      // init still receives the ABI-stable base interface. This extension ABI
+      // is only stable from interface v8 onward.
+      set_filter_mt_mode(static_cast<IScriptEnvironment2*>(env), filter_name, mode, force);
+    }
+  } else {
+    (void)env;
+    (void)filter_name;
+    (void)mode;
+    (void)force;
+  }
 }
 
 template <class Bridge>

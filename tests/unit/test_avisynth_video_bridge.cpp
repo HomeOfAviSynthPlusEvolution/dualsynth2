@@ -89,6 +89,19 @@ struct FakeAvisynthVariableEnvironment {
   }
 };
 
+struct FakeFilterMtModeRuntime {
+  int checked_version = 0;
+  std::size_t runtime_version = AVISYNTH_INTERFACE_VERSION;
+
+  void CheckVersion(int version) {
+    checked_version = version;
+  }
+
+  std::size_t GetEnvProperty(AvsEnvProperty property) {
+    return property == AEP_VERSION ? runtime_version : 0;
+  }
+};
+
 } // namespace
 
 TEST_CASE("AviSynth video bridge maps middle bit-depth planar formats") {
@@ -282,6 +295,29 @@ TEST_CASE("AviSynth cache hints report bridge MT mode") {
   REQUIRE(ds::avisynth::bridge_mt_mode<SerializedMtBridge>() == ds::avisynth::MtMode::Serialized);
   REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_MTMODE, 0) == MT_SERIALIZED);
   REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_POLICY, 0) == 0);
+}
+
+TEST_CASE("AviSynth MT registration is guarded by the stable v8 environment ABI") {
+  REQUIRE(ds::avisynth::filter_mt_mode_interface_version == 8);
+  REQUIRE(
+    ds::avisynth::compiled_with_filter_mt_mode ==
+    (AVISYNTH_INTERFACE_VERSION >= ds::avisynth::filter_mt_mode_interface_version)
+  );
+}
+
+TEST_CASE("AviSynth MT registration requires a runtime ABI matching the compile-time header") {
+  FakeFilterMtModeRuntime runtime;
+
+  if constexpr (ds::avisynth::compiled_with_filter_mt_mode) {
+    REQUIRE(ds::avisynth::runtime_matches_filter_mt_mode_abi(&runtime));
+    REQUIRE(runtime.checked_version == ds::avisynth::filter_mt_mode_interface_version);
+
+    runtime.runtime_version = AVISYNTH_INTERFACE_VERSION + 1;
+
+    REQUIRE_FALSE(ds::avisynth::runtime_matches_filter_mt_mode_abi(&runtime));
+  } else {
+    REQUIRE_FALSE(ds::avisynth::runtime_matches_filter_mt_mode_abi(&runtime));
+  }
 }
 
 TEST_CASE("AviSynth host variable adapter writes initialization variables through SetVar") {
