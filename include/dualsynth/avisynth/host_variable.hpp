@@ -143,7 +143,9 @@ struct HostVariableAdapter<Env, true> {
       return false;
     }
 
-    return env->SetVar(name, avs_value);
+    // AviSynth returns false when SetVar updates an existing variable.
+    env->SetVar(name, avs_value);
+    return true;
   }
 };
 

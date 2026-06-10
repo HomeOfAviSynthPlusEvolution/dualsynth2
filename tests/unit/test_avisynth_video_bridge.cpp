@@ -75,6 +75,7 @@ struct FakeAvisynthVariableEnvironment {
   int set_calls = 0;
   std::list<std::string> saved_strings;
   std::string set_name;
+  bool set_result = true;
 
   char* SaveString(const char* value) {
     ++save_string_calls;
@@ -85,7 +86,7 @@ struct FakeAvisynthVariableEnvironment {
   bool SetVar(const char* name, const AVSValue&) {
     ++set_calls;
     set_name = name;
-    return true;
+    return set_result;
   }
 };
 
@@ -332,6 +333,21 @@ TEST_CASE("AviSynth host variable adapter writes initialization variables throug
   REQUIRE(result);
   REQUIRE(env.save_string_calls == 1);
   REQUIRE(env.saved_strings.front() == "ready");
+  REQUIRE(env.set_calls == 1);
+  REQUIRE(env.set_name == "ThirdPartyReady");
+}
+
+TEST_CASE("AviSynth host variable adapter accepts SetVar update return value") {
+  FakeAvisynthVariableEnvironment env;
+  env.set_result = false;
+
+  const bool result = ds::avisynth::HostVariableAdapter<FakeAvisynthVariableEnvironment>::set(
+    &env,
+    "ThirdPartyReady",
+    ds::ParamValue{std::int64_t{1}}
+  );
+
+  REQUIRE(result);
   REQUIRE(env.set_calls == 1);
   REQUIRE(env.set_name == "ThirdPartyReady");
 }
