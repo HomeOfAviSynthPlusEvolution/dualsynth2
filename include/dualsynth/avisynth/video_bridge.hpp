@@ -3,6 +3,7 @@
 #include <avisynth.h>
 
 #include <dualsynth/avisynth/global_lock.hpp>
+#include <dualsynth/avisynth/host_variable.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/param.hpp>
@@ -675,13 +676,15 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
         return init_video_filter_instance<Filter>(
           collected.value(),
           &params.value(),
-          host_global_lock_callbacks(env)
+          host_global_lock_callbacks(env),
+          host_variable_callbacks(env)
         );
       } else {
         return init_video_filter_instance<Filter>(
           collected.value(),
           nullptr,
-          host_global_lock_callbacks(env)
+          host_global_lock_callbacks(env),
+          host_variable_callbacks(env)
         );
       }
     }();

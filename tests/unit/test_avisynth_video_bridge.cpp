@@ -4,10 +4,13 @@
 
 #include <array>
 #include <cstdint>
+#include <list>
 #include <map>
 #include <string>
 #include <variant>
 #include <vector>
+
+const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
 
@@ -65,6 +68,25 @@ struct DefaultMtBridge {};
 
 struct SerializedMtBridge {
   static constexpr ds::avisynth::MtMode avs_mt_mode = ds::avisynth::MtMode::Serialized;
+};
+
+struct FakeAvisynthVariableEnvironment {
+  int save_string_calls = 0;
+  int set_calls = 0;
+  std::list<std::string> saved_strings;
+  std::string set_name;
+
+  char* SaveString(const char* value) {
+    ++save_string_calls;
+    saved_strings.emplace_back(value);
+    return saved_strings.back().data();
+  }
+
+  bool SetVar(const char* name, const AVSValue&) {
+    ++set_calls;
+    set_name = name;
+    return true;
+  }
 };
 
 } // namespace
@@ -260,4 +282,20 @@ TEST_CASE("AviSynth cache hints report bridge MT mode") {
   REQUIRE(ds::avisynth::bridge_mt_mode<SerializedMtBridge>() == ds::avisynth::MtMode::Serialized);
   REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_MTMODE, 0) == MT_SERIALIZED);
   REQUIRE(ds::avisynth::cache_hint_response<SerializedMtBridge>(CACHE_GET_POLICY, 0) == 0);
+}
+
+TEST_CASE("AviSynth host variable adapter writes initialization variables through SetVar") {
+  FakeAvisynthVariableEnvironment env;
+
+  const bool result = ds::avisynth::HostVariableAdapter<FakeAvisynthVariableEnvironment>::set(
+    &env,
+    "ThirdPartyReady",
+    ds::ParamValue{"ready"}
+  );
+
+  REQUIRE(result);
+  REQUIRE(env.save_string_calls == 1);
+  REQUIRE(env.saved_strings.front() == "ready");
+  REQUIRE(env.set_calls == 1);
+  REQUIRE(env.set_name == "ThirdPartyReady");
 }

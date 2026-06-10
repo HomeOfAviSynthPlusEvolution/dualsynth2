@@ -4,6 +4,7 @@
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
 #include <dualsynth/global_lock.hpp>
+#include <dualsynth/host_variable.hpp>
 #include <dualsynth/param.hpp>
 
 #include <array>
@@ -13,7 +14,9 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace ds {
@@ -45,6 +48,11 @@ struct VideoInitContext {
   std::span<const VideoInputInfo> inputs;
   const ParamValues* params = nullptr;
   HostGlobalLockCallbacks host_global_locks{};
+  HostVariableCallbacks host_variables{};
+
+  Result<bool> set_host_var(std::string_view name, ParamValue value) const {
+    return set_host_variable(host_variables, name, std::move(value));
+  }
 };
 
 struct VideoInitResult {
@@ -274,13 +282,13 @@ collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
-  VideoInitContext context{inputs, nullptr, {}};
+  VideoInitContext context{inputs, nullptr, {}, {}};
   return Filter::init(context);
 }
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
-  VideoInitContext context{inputs, &params, {}};
+  VideoInitContext context{inputs, &params, {}, {}};
   return Filter::init(context);
 }
 
@@ -288,9 +296,10 @@ template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
   std::span<const VideoInputInfo> inputs,
   const ParamValues* params,
-  HostGlobalLockCallbacks host_global_locks = {}
+  HostGlobalLockCallbacks host_global_locks = {},
+  HostVariableCallbacks host_variables = {}
 ) {
-  VideoInitContext context{inputs, params, host_global_locks};
+  VideoInitContext context{inputs, params, host_global_locks, host_variables};
   if constexpr (VideoFilterStateTraits<Filter>::stateful) {
     auto initialized = Filter::init(context);
     if (!initialized.has_value()) {

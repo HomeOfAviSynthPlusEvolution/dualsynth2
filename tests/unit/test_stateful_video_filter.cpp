@@ -3,9 +3,23 @@
 #include <dualsynth/video_filter.hpp>
 
 #include <cstdint>
+#include <string>
+#include <variant>
 #include <vector>
 
 namespace {
+
+std::vector<ds::VideoInputInfo> sample_video_inputs() {
+  return {
+    ds::VideoInputInfo{
+      64,
+      48,
+      10,
+      ds::VideoFormat{ds::ColorFamily::Gray, ds::SampleFormat::UInt8, 1, 0, 0},
+      ds::FrameRate{24, 1}
+    }
+  };
+}
 
 struct StatefulOffsetFilter {
   static constexpr const char* name = "StatefulOffset";
@@ -50,6 +64,49 @@ struct StatefulOffsetFilter {
     auto& state = context.state<State>();
     state.processed_frame = context.output_frame + state.offset;
     return ds::Result<ds::VideoProcessResult>::success(ds::VideoProcessResult{});
+  }
+};
+
+struct HostVariableRecorder {
+  int set_calls = 0;
+  std::string name;
+  ds::ParamValue value;
+
+  static bool set(void* user, const char* name, const ds::ParamValue& value) {
+    auto& self = *static_cast<HostVariableRecorder*>(user);
+    ++self.set_calls;
+    self.name = name;
+    self.value = value;
+    return true;
+  }
+};
+
+struct HostVariableInitFilter {
+  static constexpr const char* name = "HostVariableInit";
+  static constexpr int input_count = 1;
+
+  struct State {
+    bool host_variable_set = false;
+  };
+
+  static ds::Result<ds::VideoInitStateResult<State>> init(ds::VideoInitContext& context) {
+    const auto inputs = ds::collect_video_input_infos<HostVariableInitFilter>(context.inputs);
+    if (!inputs.has_value()) {
+      return ds::Result<ds::VideoInitStateResult<State>>::failure(inputs.error());
+    }
+
+    auto set_variable = context.set_host_var("ThirdPartyReady", ds::ParamValue{"ready"});
+    if (!set_variable.has_value()) {
+      return ds::Result<ds::VideoInitStateResult<State>>::failure(set_variable.error());
+    }
+
+    const auto& input = inputs.value()[0];
+    return ds::Result<ds::VideoInitStateResult<State>>::success(
+      ds::VideoInitStateResult<State>{
+        ds::VideoOutputInfo{input.width, input.height, input.num_frames, input.format, input.fps},
+        State{set_variable.value()}
+      }
+    );
   }
 };
 
@@ -99,4 +156,32 @@ TEST_CASE("stateful video filters initialize from params and reuse state in requ
 
   REQUIRE(process.has_value());
   REQUIRE(instance.value().state.processed_frame == 7);
+}
+
+TEST_CASE("video init context writes host variables through the host callback") {
+  HostVariableRecorder recorder;
+  const ds::HostVariableCallbacks callbacks{
+    &recorder,
+    &HostVariableRecorder::set
+  };
+
+  auto instance = ds::init_video_filter_instance<HostVariableInitFilter>(
+    sample_video_inputs(),
+    nullptr,
+    {},
+    callbacks
+  );
+
+  REQUIRE(instance.has_value());
+  REQUIRE(instance.value().state.host_variable_set);
+  REQUIRE(recorder.set_calls == 1);
+  REQUIRE(recorder.name == "ThirdPartyReady");
+  REQUIRE(std::get<std::string>(recorder.value.value) == "ready");
+}
+
+TEST_CASE("video init context treats missing host variable support as a successful no-op") {
+  auto instance = ds::init_video_filter_instance<HostVariableInitFilter>(sample_video_inputs());
+
+  REQUIRE(instance.has_value());
+  REQUIRE(instance.value().state.host_variable_set);
 }
