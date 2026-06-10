@@ -26,9 +26,9 @@ target_include_directories(dualsynth_acceptance
 target_compile_features(dualsynth_acceptance PRIVATE cxx_std_23)
 ds_apply_compiler_options(dualsynth_acceptance)
 
-if(MSVC)
+if(MSVC AND DS_MSVC_RUNTIME_LIBRARY)
   set_property(TARGET dualsynth_acceptance PROPERTY
-    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    MSVC_RUNTIME_LIBRARY "${DS_MSVC_RUNTIME_LIBRARY}"
   )
 endif()
 

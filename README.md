@@ -39,6 +39,11 @@ FetchContent_MakeAvailable(dualsynth2)
 target_link_libraries(my_plugin PRIVATE DualSynth::dualsynth)
 ```
 
+On MSVC, DualSynth does not force `/MD` or `/MT`. Use the same runtime library
+for the plugin and DualSynth, either by setting `CMAKE_MSVC_RUNTIME_LIBRARY` in
+the top-level plugin project or by setting `DS_MSVC_RUNTIME_LIBRARY` before
+adding DualSynth.
+
 Write the filter core against the DualSynth C++ API, then provide the VapourSynth and/or AviSynth+ bridge entry points needed by the host.
 
 ## License

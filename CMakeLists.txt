@@ -6,16 +6,24 @@ project(DualSynth
   LANGUAGES CXX
 )
 
-if(MSVC)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-endif()
-
 option(DS_BUILD_TESTS "Build DualSynth tests" ON)
 option(DS_BUILD_ACCEPTANCE_PLUGIN "Build DualSynth acceptance plugin" ON)
 option(
   DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN
   "Build the AviSynth+ acceptance plugin entry on POSIX hosts"
   OFF
+)
+set(DS_MSVC_RUNTIME_LIBRARY "" CACHE STRING
+  "Optional MSVC runtime library override for DualSynth targets. Leave empty to use the toolchain or parent project default."
+)
+set_property(CACHE DS_MSVC_RUNTIME_LIBRARY PROPERTY STRINGS
+  ""
+  "MultiThreaded"
+  "MultiThreadedDebug"
+  "MultiThreadedDLL"
+  "MultiThreadedDebugDLL"
+  "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+  "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
 )
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -93,6 +101,11 @@ add_library(DualSynth::dualsynth ALIAS dualsynth)
 set_target_properties(dualsynth PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
+if(MSVC AND DS_MSVC_RUNTIME_LIBRARY)
+  set_property(TARGET dualsynth PROPERTY
+    MSVC_RUNTIME_LIBRARY "${DS_MSVC_RUNTIME_LIBRARY}"
+  )
+endif()
 
 target_compile_features(dualsynth PUBLIC cxx_std_23)
 target_include_directories(dualsynth
