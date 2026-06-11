@@ -471,9 +471,13 @@ void create_video_filter_bridge(
         if (!params.has_value()) {
           return Result<VideoFilterInstance<Filter>>::failure(params.error());
         }
-        return init_video_filter_instance<Filter>(collected.value(), params.value());
+        return init_video_filter_instance<Filter>(
+          collected.value(),
+          params.value(),
+          HostKind::VapourSynth
+        );
       } else {
-        return init_video_filter_instance<Filter>(collected.value());
+        return init_video_filter_instance<Filter>(collected.value(), HostKind::VapourSynth);
       }
     }();
     if (!init_result.has_value()) {

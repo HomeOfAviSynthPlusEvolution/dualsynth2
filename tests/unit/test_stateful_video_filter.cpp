@@ -110,6 +110,30 @@ struct HostVariableInitFilter {
   }
 };
 
+struct HostKindInitFilter {
+  static constexpr const char* name = "HostKindInit";
+  static constexpr int input_count = 1;
+
+  struct State {
+    ds::HostKind host = ds::HostKind::Unknown;
+  };
+
+  static ds::Result<ds::VideoInitStateResult<State>> init(ds::VideoInitContext& context) {
+    const auto inputs = ds::collect_video_input_infos<HostKindInitFilter>(context.inputs);
+    if (!inputs.has_value()) {
+      return ds::Result<ds::VideoInitStateResult<State>>::failure(inputs.error());
+    }
+
+    const auto& input = inputs.value()[0];
+    return ds::Result<ds::VideoInitStateResult<State>>::success(
+      ds::VideoInitStateResult<State>{
+        ds::VideoOutputInfo{input.width, input.height, input.num_frames, input.format, input.fps},
+        State{context.host}
+      }
+    );
+  }
+};
+
 } // namespace
 
 TEST_CASE("stateful video filters initialize from params and reuse state in request and process") {
@@ -184,4 +208,27 @@ TEST_CASE("video init context treats missing host variable support as a successf
 
   REQUIRE(instance.has_value());
   REQUIRE(instance.value().state.host_variable_set);
+}
+
+TEST_CASE("video init context defaults to unknown host kind") {
+  auto instance = ds::init_video_filter_instance<HostKindInitFilter>(sample_video_inputs());
+
+  REQUIRE(instance.has_value());
+  REQUIRE(instance.value().state.host == ds::HostKind::Unknown);
+}
+
+TEST_CASE("video init context carries explicit host kind") {
+  auto vapoursynth_instance = ds::init_video_filter_instance<HostKindInitFilter>(
+    sample_video_inputs(),
+    ds::HostKind::VapourSynth
+  );
+  auto avisynth_instance = ds::init_video_filter_instance<HostKindInitFilter>(
+    sample_video_inputs(),
+    ds::HostKind::AviSynth
+  );
+
+  REQUIRE(vapoursynth_instance.has_value());
+  REQUIRE(vapoursynth_instance.value().state.host == ds::HostKind::VapourSynth);
+  REQUIRE(avisynth_instance.has_value());
+  REQUIRE(avisynth_instance.value().state.host == ds::HostKind::AviSynth);
 }

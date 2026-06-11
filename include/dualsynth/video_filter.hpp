@@ -21,6 +21,12 @@
 
 namespace ds {
 
+enum class HostKind {
+  Unknown,
+  VapourSynth,
+  AviSynth
+};
+
 struct FrameRate {
   std::int64_t numerator = 0;
   std::int64_t denominator = 1;
@@ -49,6 +55,7 @@ struct VideoInitContext {
   const ParamValues* params = nullptr;
   HostGlobalLockCallbacks host_global_locks{};
   HostVariableCallbacks host_variables{};
+  HostKind host = HostKind::Unknown;
 
   Result<bool> set_host_var(std::string_view name, ParamValue value) const {
     return set_host_variable(host_variables, name, std::move(value));
@@ -282,13 +289,13 @@ collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
-  VideoInitContext context{inputs, nullptr, {}, {}};
+  VideoInitContext context{inputs, nullptr, {}, {}, HostKind::Unknown};
   return Filter::init(context);
 }
 
 template <class Filter>
 Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
-  VideoInitContext context{inputs, &params, {}, {}};
+  VideoInitContext context{inputs, &params, {}, {}, HostKind::Unknown};
   return Filter::init(context);
 }
 
@@ -297,9 +304,10 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
   std::span<const VideoInputInfo> inputs,
   const ParamValues* params,
   HostGlobalLockCallbacks host_global_locks = {},
-  HostVariableCallbacks host_variables = {}
+  HostVariableCallbacks host_variables = {},
+  HostKind host = HostKind::Unknown
 ) {
-  VideoInitContext context{inputs, params, host_global_locks, host_variables};
+  VideoInitContext context{inputs, params, host_global_locks, host_variables, host};
   if constexpr (VideoFilterStateTraits<Filter>::stateful) {
     auto initialized = Filter::init(context);
     if (!initialized.has_value()) {
@@ -324,17 +332,19 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
 
 template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
-  std::span<const VideoInputInfo> inputs
+  std::span<const VideoInputInfo> inputs,
+  HostKind host = HostKind::Unknown
 ) {
-  return init_video_filter_instance<Filter>(inputs, nullptr);
+  return init_video_filter_instance<Filter>(inputs, nullptr, {}, {}, host);
 }
 
 template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
   std::span<const VideoInputInfo> inputs,
-  const ParamValues& params
+  const ParamValues& params,
+  HostKind host = HostKind::Unknown
 ) {
-  return init_video_filter_instance<Filter>(inputs, &params);
+  return init_video_filter_instance<Filter>(inputs, &params, {}, {}, host);
 }
 
 template <class Filter>

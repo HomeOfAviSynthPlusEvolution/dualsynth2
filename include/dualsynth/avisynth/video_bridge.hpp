@@ -730,14 +730,16 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
           collected.value(),
           &params.value(),
           host_global_lock_callbacks(env),
-          host_variable_callbacks(env)
+          host_variable_callbacks(env),
+          HostKind::AviSynth
         );
       } else {
         return init_video_filter_instance<Filter>(
           collected.value(),
           nullptr,
           host_global_lock_callbacks(env),
-          host_variable_callbacks(env)
+          host_variable_callbacks(env),
+          HostKind::AviSynth
         );
       }
     }();
