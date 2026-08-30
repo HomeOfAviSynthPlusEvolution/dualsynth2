@@ -7,6 +7,7 @@
 #include <dualsynth/media.hpp>
 #include <dualsynth/mdspan.hpp>
 #include <dualsynth/param.hpp>
+#include <dualsynth/span2d.hpp>
 #include <dualsynth/video_filter.hpp>
 
 namespace ds {
