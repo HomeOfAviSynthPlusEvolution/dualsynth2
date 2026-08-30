@@ -43,7 +43,7 @@ TEST_CASE("FrameHandle move transfers ownership") {
   REQUIRE(release_count == 1);
 }
 
-TEST_CASE("Video frame view exposes typed mdspan planes") {
+TEST_CASE("Video frame view exposes typed span2d planes") {
   std::array<std::uint16_t, 8> storage{
     1, 2, 3, 99,
     4, 5, 6, 88
@@ -60,13 +60,13 @@ TEST_CASE("Video frame view exposes typed mdspan planes") {
     }
   };
 
-  auto plane = ds::as_plane_view<std::uint16_t>(frame.plane(0));
+  auto plane = ds::as_plane<std::uint16_t>(frame.plane(0));
 
-  REQUIRE(plane.extent(0) == 2);
-  REQUIRE(plane.extent(1) == 3);
-  REQUIRE(plane[1, 2] == 6);
+  REQUIRE(plane.height() == 2);
+  REQUIRE(plane.width() == 3);
+  REQUIRE(plane(1, 2) == 6);
 
-  plane[1, 2] = 42;
+  plane(1, 2) = 42;
 
   REQUIRE(storage[6] == 42);
   REQUIRE(storage[7] == 88);

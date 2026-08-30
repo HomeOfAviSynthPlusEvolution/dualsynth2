@@ -1,7 +1,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include "temporal_average3.hpp"
-#include <dualsynth/mdspan.hpp>
+#include <dualsynth/span2d.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <string>
