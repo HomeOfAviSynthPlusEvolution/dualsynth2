@@ -11,6 +11,7 @@ TEST_CASE("span2d Row provides lightweight 1D continuous row slicing") {
 
   STATIC_REQUIRE(sizeof(span2d::Row<std::uint8_t>) == 16);
   STATIC_REQUIRE(sizeof(span2d::Row<const std::uint8_t>) == 16);
+  STATIC_REQUIRE_FALSE(span2d::Row<std::uint8_t>::is_restrict);
 
   REQUIRE(row.size() == 5);
   REQUIRE(row.size_bytes() == 5);
@@ -59,6 +60,7 @@ TEST_CASE("span2d Plane indexes stride-backed 2D planes and extracts rows") {
 
   STATIC_REQUIRE(sizeof(span2d::Plane<std::uint16_t>) == 24);
   STATIC_REQUIRE(sizeof(span2d::Plane<const std::uint16_t>) == 24);
+  STATIC_REQUIRE_FALSE(span2d::Plane<std::uint16_t>::is_restrict);
 
   REQUIRE(plane.width() == width);
   REQUIRE(plane.height() == height);
@@ -114,6 +116,7 @@ TEST_CASE("span2d RowCursor steps through scanlines and supports relative peekin
 
   STATIC_REQUIRE(sizeof(span2d::RowCursor<std::int32_t>) == 16);
   STATIC_REQUIRE(sizeof(span2d::RowCursor<const std::int32_t>) == 16);
+  STATIC_REQUIRE_FALSE(span2d::RowCursor<std::int32_t>::is_restrict);
 
   auto cur = plane.cursor();
   REQUIRE(cur.ptr() == buffer.data());
@@ -150,14 +153,79 @@ TEST_CASE("span2d RowCursor steps through scanlines and supports relative peekin
   REQUIRE(row_idx == 3);
 }
 
+TEST_CASE("span2d Restrict views and explicit conversion methods work seamlessly") {
+  std::vector<std::uint8_t> buffer = {1, 2, 3, 4, 5, 6, 7, 8};
+  span2d::Plane<std::uint8_t> plane(buffer.data(), 4, 2, 4);
+
+  STATIC_REQUIRE(sizeof(span2d::RestrictPlane<std::uint8_t>) == 24);
+  STATIC_REQUIRE(sizeof(span2d::RestrictRow<std::uint8_t>) == 16);
+  STATIC_REQUIRE(sizeof(span2d::RestrictRowCursor<std::uint8_t>) == 16);
+
+  STATIC_REQUIRE(span2d::RestrictPlane<std::uint8_t>::is_restrict);
+  STATIC_REQUIRE(span2d::RestrictRow<std::uint8_t>::is_restrict);
+  STATIC_REQUIRE(span2d::RestrictRowCursor<std::uint8_t>::is_restrict);
+
+  // 1. Plane .as_restrict() & .as_unrestricted()
+  auto rest_plane = plane.as_restrict();
+  STATIC_REQUIRE(std::is_same_v<decltype(rest_plane), span2d::RestrictPlane<std::uint8_t>>);
+  REQUIRE(rest_plane(1, 2) == 7);
+
+  auto back_plane = rest_plane.as_unrestricted();
+  STATIC_REQUIRE(std::is_same_v<decltype(back_plane), span2d::Plane<std::uint8_t>>);
+  REQUIRE(back_plane(1, 2) == 7);
+
+  // 2. Row .as_restrict() & .as_unrestricted()
+  auto row = plane.row(1);
+  auto rest_row = row.as_restrict();
+  STATIC_REQUIRE(std::is_same_v<decltype(rest_row), span2d::RestrictRow<std::uint8_t>>);
+  REQUIRE(rest_row[2] == 7);
+
+  auto back_row = rest_row.as_unrestricted();
+  STATIC_REQUIRE(std::is_same_v<decltype(back_row), span2d::Row<std::uint8_t>>);
+  REQUIRE(back_row[2] == 7);
+
+  // 3. Cursor .as_restrict() & .as_unrestricted()
+  auto cursor = plane.cursor();
+  auto rest_cur = cursor.as_restrict();
+  STATIC_REQUIRE(std::is_same_v<decltype(rest_cur), span2d::RestrictRowCursor<std::uint8_t>>);
+  REQUIRE((*rest_cur)[3] == 4);
+
+  auto back_cur = rest_cur.as_unrestricted();
+  STATIC_REQUIRE(std::is_same_v<decltype(back_cur), span2d::RowCursor<std::uint8_t>>);
+  REQUIRE((*back_cur)[3] == 4);
+
+  // 4. Free conversion functions
+  auto p_free_rest = span2d::as_restrict(plane);
+  STATIC_REQUIRE(std::is_same_v<decltype(p_free_rest), span2d::RestrictPlane<std::uint8_t>>);
+
+  auto r_free_rest = span2d::as_restrict(row);
+  STATIC_REQUIRE(std::is_same_v<decltype(r_free_rest), span2d::RestrictRow<std::uint8_t>>);
+
+  auto c_free_rest = span2d::as_restrict(cursor);
+  STATIC_REQUIRE(std::is_same_v<decltype(c_free_rest), span2d::RestrictRowCursor<std::uint8_t>>);
+
+  auto p_free_unrest = span2d::as_unrestricted(rest_plane);
+  STATIC_REQUIRE(std::is_same_v<decltype(p_free_unrest), span2d::Plane<std::uint8_t>>);
+}
+
 TEST_CASE("span2d factory functions and ds namespace aliases work properly") {
   std::vector<std::uint8_t> buffer(16, 42);
+
+  // Standard safe factory
   auto p = ds::make_plane(buffer.data(), 4, 4, 4);
   STATIC_REQUIRE(std::is_same_v<decltype(p), ds::Plane<std::uint8_t>>);
-
   REQUIRE(p(2, 2) == 42);
 
   auto r = ds::make_row(buffer.data(), buffer.size());
   STATIC_REQUIRE(std::is_same_v<decltype(r), ds::Row<std::uint8_t>>);
   REQUIRE(r[5] == 42);
+
+  // Restrict factory
+  auto rp = ds::make_restrict_plane(buffer.data(), 4, 4, 4);
+  STATIC_REQUIRE(std::is_same_v<decltype(rp), ds::RestrictPlane<std::uint8_t>>);
+  REQUIRE(rp(2, 2) == 42);
+
+  auto rr = ds::make_restrict_row(buffer.data(), buffer.size());
+  STATIC_REQUIRE(std::is_same_v<decltype(rr), ds::RestrictRow<std::uint8_t>>);
+  REQUIRE(rr[5] == 42);
 }

@@ -19,13 +19,21 @@
 
 namespace span2d {
 
-template <class T>
-class Row {
+// Forward declarations
+template <class T, bool IsRestrict> class BasicRow;
+template <class T, bool IsRestrict> class BasicRowCursor;
+template <class T, bool IsRestrict> class BasicPlane;
+
+// ============================================================================
+// 1. BasicRow<T, IsRestrict>
+// ============================================================================
+template <class T, bool IsRestrict>
+class BasicRow {
 public:
   using element_type    = T;
   using value_type      = std::remove_cv_t<T>;
-  using pointer         = T*;
-  using const_pointer   = const T*;
+  using pointer         = std::conditional_t<IsRestrict, T* SPAN2D_RESTRICT, T*>;
+  using const_pointer   = std::conditional_t<IsRestrict, const T* SPAN2D_RESTRICT, const T*>;
   using reference       = T&;
   using const_reference = const T&;
   using size_type       = std::size_t;
@@ -33,11 +41,16 @@ public:
   using iterator        = pointer;
   using const_iterator  = const_pointer;
 
-  constexpr Row() noexcept : data_(nullptr), size_(0) {}
-  constexpr Row(pointer data, size_type size) noexcept : data_(data), size_(size) {}
+  static constexpr bool is_restrict = IsRestrict;
 
-  template <class U, typename = std::enable_if_t<std::is_same<const U, T>::value>>
-  constexpr Row(const Row<U>& other) noexcept : data_(other.data()), size_(other.size()) {}
+  constexpr BasicRow() noexcept : data_(nullptr), size_(0) {}
+  constexpr BasicRow(pointer data, size_type size) noexcept : data_(data), size_(size) {}
+
+  // Conversion from non-const to const
+  template <class U, bool OtherRestrict,
+            typename = std::enable_if_t<std::is_same<const U, T>::value && (OtherRestrict == IsRestrict)>>
+  constexpr BasicRow(const BasicRow<U, OtherRestrict>& other) noexcept
+    : data_(other.data()), size_(other.size()) {}
 
   [[nodiscard]] constexpr pointer data() const noexcept { return data_; }
   [[nodiscard]] constexpr size_type size() const noexcept { return size_; }
@@ -54,31 +67,46 @@ public:
   [[nodiscard]] constexpr const_iterator cbegin() const noexcept { return data_; }
   [[nodiscard]] constexpr const_iterator cend() const noexcept { return data_ + size_; }
 
-  [[nodiscard]] constexpr Row subspan(size_type offset, size_type count) const noexcept {
-    return Row(data_ + offset, count);
+  [[nodiscard]] constexpr BasicRow subspan(size_type offset, size_type count) const noexcept {
+    return BasicRow(data_ + offset, count);
+  }
+
+  // Converters
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicRow<T, true> as_restrict() const noexcept {
+    return BasicRow<T, true>(data_, size_);
+  }
+
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicRow<T, false> as_unrestricted() const noexcept {
+    return BasicRow<T, false>(data_, size_);
   }
 
 private:
-  pointer SPAN2D_RESTRICT data_ = nullptr;
+  pointer data_ = nullptr;
   size_type size_ = 0;
 };
 
-template <class T>
-class RowCursor {
+// ============================================================================
+// 2. BasicRowCursor<T, IsRestrict>
+// ============================================================================
+template <class T, bool IsRestrict>
+class BasicRowCursor {
 public:
   using element_type    = T;
-  using pointer         = T*;
+  using pointer         = std::conditional_t<IsRestrict, T* SPAN2D_RESTRICT, T*>;
   using reference       = T&;
   using size_type       = std::int32_t;
   using difference_type = std::int32_t;
-  using row_type        = Row<T>;
+  using row_type        = BasicRow<T, IsRestrict>;
 
-  constexpr RowCursor() noexcept = default;
-  constexpr RowCursor(pointer data, size_type width, difference_type stride_elements) noexcept
+  static constexpr bool is_restrict = IsRestrict;
+
+  constexpr BasicRowCursor() noexcept = default;
+  constexpr BasicRowCursor(pointer data, size_type width, difference_type stride_elements) noexcept
     : ptr_(data), width_(width), stride_(stride_elements) {}
 
-  template <class U, typename = std::enable_if_t<std::is_same<const U, T>::value>>
-  constexpr RowCursor(const RowCursor<U>& other) noexcept
+  template <class U, bool OtherRestrict,
+            typename = std::enable_if_t<std::is_same<const U, T>::value && (OtherRestrict == IsRestrict)>>
+  constexpr BasicRowCursor(const BasicRowCursor<U, OtherRestrict>& other) noexcept
     : ptr_(other.ptr()), width_(other.width()), stride_(other.stride()) {}
 
   [[nodiscard]] constexpr pointer ptr() const noexcept { return ptr_; }
@@ -93,76 +121,101 @@ public:
     return row();
   }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE row_type operator[](difference_type dy) const noexcept {
+  template <class IndexY, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE row_type operator[](IndexY dy) const noexcept {
     return row_type(ptr_ + static_cast<std::ptrdiff_t>(dy) * stride_, static_cast<std::size_t>(width_));
   }
 
-  SPAN2D_FORCEINLINE RowCursor& operator++() noexcept {
+  SPAN2D_FORCEINLINE BasicRowCursor& operator++() noexcept {
     ptr_ += stride_;
     return *this;
   }
 
-  SPAN2D_FORCEINLINE RowCursor operator++(int) noexcept {
+  SPAN2D_FORCEINLINE BasicRowCursor operator++(int) noexcept {
     auto tmp = *this;
     ptr_ += stride_;
     return tmp;
   }
 
-  SPAN2D_FORCEINLINE RowCursor& operator+=(difference_type n) noexcept {
+  template <class Offset, typename = std::enable_if_t<std::is_integral_v<Offset>>>
+  SPAN2D_FORCEINLINE BasicRowCursor& operator+=(Offset n) noexcept {
     ptr_ += static_cast<std::ptrdiff_t>(n) * stride_;
     return *this;
   }
 
-  SPAN2D_FORCEINLINE RowCursor& operator--() noexcept {
+  SPAN2D_FORCEINLINE BasicRowCursor& operator--() noexcept {
     ptr_ -= stride_;
     return *this;
   }
 
-  SPAN2D_FORCEINLINE RowCursor operator--(int) noexcept {
+  SPAN2D_FORCEINLINE BasicRowCursor operator--(int) noexcept {
     auto tmp = *this;
     ptr_ -= stride_;
     return tmp;
   }
 
-  SPAN2D_FORCEINLINE RowCursor& operator-=(difference_type n) noexcept {
+  template <class Offset, typename = std::enable_if_t<std::is_integral_v<Offset>>>
+  SPAN2D_FORCEINLINE BasicRowCursor& operator-=(Offset n) noexcept {
     ptr_ -= static_cast<std::ptrdiff_t>(n) * stride_;
     return *this;
   }
 
-  [[nodiscard]] constexpr bool operator==(const RowCursor& other) const noexcept { return ptr_ == other.ptr_; }
-  [[nodiscard]] constexpr bool operator!=(const RowCursor& other) const noexcept { return ptr_ != other.ptr_; }
+  template <bool OtherRestrict>
+  [[nodiscard]] constexpr bool operator==(const BasicRowCursor<T, OtherRestrict>& other) const noexcept {
+    return ptr_ == other.ptr();
+  }
+
+  template <bool OtherRestrict>
+  [[nodiscard]] constexpr bool operator!=(const BasicRowCursor<T, OtherRestrict>& other) const noexcept {
+    return ptr_ != other.ptr();
+  }
+
+  // Converters
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicRowCursor<T, true> as_restrict() const noexcept {
+    return BasicRowCursor<T, true>(ptr_, width_, stride_);
+  }
+
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicRowCursor<T, false> as_unrestricted() const noexcept {
+    return BasicRowCursor<T, false>(ptr_, width_, stride_);
+  }
 
 private:
-  pointer SPAN2D_RESTRICT ptr_ = nullptr;
+  pointer ptr_ = nullptr;
   size_type width_ = 0;
   difference_type stride_ = 0;
 };
 
-template <class T>
-class Plane {
+// ============================================================================
+// 3. BasicPlane<T, IsRestrict>
+// ============================================================================
+template <class T, bool IsRestrict>
+class BasicPlane {
 public:
   using element_type    = T;
   using value_type      = std::remove_cv_t<T>;
-  using pointer         = T*;
-  using const_pointer   = const T*;
+  using pointer         = std::conditional_t<IsRestrict, T* SPAN2D_RESTRICT, T*>;
+  using const_pointer   = std::conditional_t<IsRestrict, const T* SPAN2D_RESTRICT, const T*>;
   using reference       = T&;
   using const_reference = const T&;
   using size_type       = std::int32_t;
   using difference_type = std::int32_t;
-  using row_type        = Row<T>;
-  using cursor_type     = RowCursor<T>;
+  using row_type        = BasicRow<T, IsRestrict>;
+  using cursor_type     = BasicRowCursor<T, IsRestrict>;
 
-  constexpr Plane() noexcept = default;
+  static constexpr bool is_restrict = IsRestrict;
 
-  constexpr Plane(pointer data, size_type width, size_type height, difference_type stride_elements) noexcept
+  constexpr BasicPlane() noexcept = default;
+
+  constexpr BasicPlane(pointer data, size_type width, size_type height, difference_type stride_elements) noexcept
     : data_(data), width_(width), height_(height), stride_(stride_elements) {}
 
-  constexpr Plane(pointer data, size_type width, size_type height, std::ptrdiff_t stride_bytes) noexcept
+  constexpr BasicPlane(pointer data, size_type width, size_type height, std::ptrdiff_t stride_bytes) noexcept
     : data_(data), width_(width), height_(height),
       stride_(static_cast<difference_type>(stride_bytes / sizeof(T))) {}
 
-  template <class U, typename = std::enable_if_t<std::is_same<const U, T>::value>>
-  constexpr Plane(const Plane<U>& other) noexcept
+  template <class U, bool OtherRestrict,
+            typename = std::enable_if_t<std::is_same<const U, T>::value && (OtherRestrict == IsRestrict)>>
+  constexpr BasicPlane(const BasicPlane<U, OtherRestrict>& other) noexcept
     : data_(other.data()), width_(other.width()), height_(other.height()), stride_(other.stride()) {}
 
   [[nodiscard]] constexpr pointer data() const noexcept { return data_; }
@@ -178,38 +231,103 @@ public:
     return data_[static_cast<std::size_t>(y) * stride_ + x];
   }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE pointer SPAN2D_RESTRICT row_ptr(size_type y) const noexcept {
+  template <class IndexY, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE pointer row_ptr(IndexY y) const noexcept {
     return data_ + static_cast<std::size_t>(y) * stride_;
   }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE row_type row(size_type y) const noexcept {
+  template <class IndexY, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE row_type row(IndexY y) const noexcept {
     return row_type(row_ptr(y), static_cast<std::size_t>(width_));
   }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE cursor_type cursor(size_type y = 0) const noexcept {
+  template <class IndexY = size_type, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE cursor_type cursor(IndexY y = 0) const noexcept {
     return cursor_type(row_ptr(y), width_, stride_);
   }
 
   [[nodiscard]] constexpr cursor_type begin() const noexcept { return cursor(0); }
   [[nodiscard]] constexpr cursor_type end() const noexcept { return cursor(height_); }
 
-  [[nodiscard]] constexpr Plane subplane(size_type x, size_type y, size_type w, size_type h) const noexcept {
-    return Plane(data_ + static_cast<std::size_t>(y) * stride_ + x, w, h, stride_);
+  [[nodiscard]] constexpr BasicPlane subplane(size_type x, size_type y, size_type w, size_type h) const noexcept {
+    return BasicPlane(data_ + static_cast<std::size_t>(y) * stride_ + x, w, h, stride_);
+  }
+
+  // Converters
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicPlane<T, true> as_restrict() const noexcept {
+    return BasicPlane<T, true>(data_, width_, height_, stride_);
+  }
+
+  [[nodiscard]] SPAN2D_FORCEINLINE BasicPlane<T, false> as_unrestricted() const noexcept {
+    return BasicPlane<T, false>(data_, width_, height_, stride_);
   }
 
 private:
-  pointer SPAN2D_RESTRICT data_ = nullptr;
+  pointer data_ = nullptr;
   size_type width_ = 0;
   size_type height_ = 0;
   difference_type stride_ = 0;
 };
 
-template <class T>
-using ReadOnlyPlane     = Plane<const T>;
-template <class T>
-using ReadOnlyRow       = Row<const T>;
-template <class T>
-using ReadOnlyRowCursor = RowCursor<const T>;
+// ============================================================================
+// 4. Aliases
+// ============================================================================
+
+// Standard Safe Views (no restrict)
+template <class T> using Row               = BasicRow<T, false>;
+template <class T> using RowCursor         = BasicRowCursor<T, false>;
+template <class T> using Plane             = BasicPlane<T, false>;
+
+// High-Performance Views (with restrict)
+template <class T> using RestrictRow       = BasicRow<T, true>;
+template <class T> using RestrictRowCursor = BasicRowCursor<T, true>;
+template <class T> using RestrictPlane     = BasicPlane<T, true>;
+
+// Read-Only Aliases
+template <class T> using ReadOnlyPlane             = Plane<const T>;
+template <class T> using ReadOnlyRestrictPlane     = RestrictPlane<const T>;
+template <class T> using ReadOnlyRow               = Row<const T>;
+template <class T> using ReadOnlyRestrictRow       = RestrictRow<const T>;
+template <class T> using ReadOnlyRowCursor         = RowCursor<const T>;
+template <class T> using ReadOnlyRestrictRowCursor = RestrictRowCursor<const T>;
+
+// ============================================================================
+// 5. Free Conversion Functions
+// ============================================================================
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicRow<T, true> as_restrict(BasicRow<T, IsRestrict> r) noexcept {
+  return r.as_restrict();
+}
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicRow<T, false> as_unrestricted(BasicRow<T, IsRestrict> r) noexcept {
+  return r.as_unrestricted();
+}
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicRowCursor<T, true> as_restrict(BasicRowCursor<T, IsRestrict> c) noexcept {
+  return c.as_restrict();
+}
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicRowCursor<T, false> as_unrestricted(BasicRowCursor<T, IsRestrict> c) noexcept {
+  return c.as_unrestricted();
+}
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicPlane<T, true> as_restrict(BasicPlane<T, IsRestrict> p) noexcept {
+  return p.as_restrict();
+}
+
+template <class T, bool IsRestrict>
+[[nodiscard]] SPAN2D_FORCEINLINE constexpr BasicPlane<T, false> as_unrestricted(BasicPlane<T, IsRestrict> p) noexcept {
+  return p.as_unrestricted();
+}
+
+// ============================================================================
+// 6. Factory Functions
+// ============================================================================
 
 template <class T>
 constexpr Plane<T> make_plane(T* data, std::int32_t width, std::int32_t height, std::ptrdiff_t stride_bytes) noexcept {
@@ -217,22 +335,43 @@ constexpr Plane<T> make_plane(T* data, std::int32_t width, std::int32_t height, 
 }
 
 template <class T>
+constexpr RestrictPlane<T> make_restrict_plane(T* data, std::int32_t width, std::int32_t height, std::ptrdiff_t stride_bytes) noexcept {
+  return RestrictPlane<T>(data, width, height, stride_bytes);
+}
+
+template <class T>
 constexpr Row<T> make_row(T* data, std::size_t size) noexcept {
   return Row<T>(data, size);
+}
+
+template <class T>
+constexpr RestrictRow<T> make_restrict_row(T* data, std::size_t size) noexcept {
+  return RestrictRow<T>(data, size);
 }
 
 } // namespace span2d
 
 namespace ds {
 
-template <class T>
-using Plane = ::span2d::Plane<T>;
-template <class T>
-using Row = ::span2d::Row<T>;
-template <class T>
-using RowCursor = ::span2d::RowCursor<T>;
+template <class T> using Plane             = ::span2d::Plane<T>;
+template <class T> using RestrictPlane     = ::span2d::RestrictPlane<T>;
+template <class T> using Row               = ::span2d::Row<T>;
+template <class T> using RestrictRow       = ::span2d::RestrictRow<T>;
+template <class T> using RowCursor         = ::span2d::RowCursor<T>;
+template <class T> using RestrictRowCursor = ::span2d::RestrictRowCursor<T>;
+
+template <class T> using ReadOnlyPlane             = ::span2d::ReadOnlyPlane<T>;
+template <class T> using ReadOnlyRestrictPlane     = ::span2d::ReadOnlyRestrictPlane<T>;
+template <class T> using ReadOnlyRow               = ::span2d::ReadOnlyRow<T>;
+template <class T> using ReadOnlyRestrictRow       = ::span2d::ReadOnlyRestrictRow<T>;
+template <class T> using ReadOnlyRowCursor         = ::span2d::ReadOnlyRowCursor<T>;
+template <class T> using ReadOnlyRestrictRowCursor = ::span2d::ReadOnlyRestrictRowCursor<T>;
 
 using ::span2d::make_plane;
+using ::span2d::make_restrict_plane;
 using ::span2d::make_row;
+using ::span2d::make_restrict_row;
+using ::span2d::as_restrict;
+using ::span2d::as_unrestricted;
 
 } // namespace ds
