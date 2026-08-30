@@ -474,14 +474,22 @@ inline bool output_origin_matches(
   const VideoOutputInfo& output,
   std::span<const VideoInputInfo> inputs
 ) {
-  if (origin.kind == OutputOriginKind::Fresh) {
+  if (origin.pixels == OutputPixelPolicy::Fresh) {
+    if (origin.prop_input_index >= 0) {
+      if (static_cast<std::size_t>(origin.prop_input_index) >= inputs.size()) {
+        return false;
+      }
+    }
     return true;
   }
-  if (origin.input_index < 0 || static_cast<std::size_t>(origin.input_index) >= inputs.size()) {
+  if (origin.pixel_input_index < 0 || static_cast<std::size_t>(origin.pixel_input_index) >= inputs.size()) {
+    return false;
+  }
+  if (origin.prop_input_index >= 0 && static_cast<std::size_t>(origin.prop_input_index) >= inputs.size()) {
     return false;
   }
 
-  const VideoInputInfo& input = inputs[static_cast<std::size_t>(origin.input_index)];
+  const VideoInputInfo& input = inputs[static_cast<std::size_t>(origin.pixel_input_index)];
   return input.width == output.width &&
     input.height == output.height &&
     input.format == output.format;
@@ -650,19 +658,26 @@ public:
 private:
   PVideoFrame new_output_frame(int n, IScriptEnvironment* env) {
     const OutputOrigin origin = filter_output_origin<Filter>();
-    if (origin.kind == OutputOriginKind::Fresh) {
-      return env->NewVideoFrame(vi_);
+    if (origin.pixels == OutputPixelPolicy::TakeFromInput && origin.pixel_input_index >= 0) {
+      const auto origin_index = static_cast<std::size_t>(origin.pixel_input_index);
+      PVideoFrame src = clips_[origin_index]->GetFrame(n, env);
+      if (env->MakeWritable(&src)) {
+        return src;
+      }
+      PVideoFrame dst = env->NewVideoFrame(vi_);
+      copy_video_frame_pixels(src, dst, output_format_);
+      return dst;
     }
 
-    const auto origin_index = static_cast<std::size_t>(origin.input_index);
-    PVideoFrame src = clips_[origin_index]->GetFrame(n, env);
-    if (origin.kind == OutputOriginKind::TakeFromInput && env->MakeWritable(&src)) {
-      return src;
+    if (origin.pixels == OutputPixelPolicy::CopyFromInput && origin.pixel_input_index >= 0) {
+      const auto origin_index = static_cast<std::size_t>(origin.pixel_input_index);
+      PVideoFrame src = clips_[origin_index]->GetFrame(n, env);
+      PVideoFrame dst = env->NewVideoFrame(vi_);
+      copy_video_frame_pixels(src, dst, output_format_);
+      return dst;
     }
 
-    PVideoFrame dst = env->NewVideoFrame(vi_);
-    copy_video_frame_pixels(src, dst, output_format_);
-    return dst;
+    return env->NewVideoFrame(vi_);
   }
 
   std::array<PClip, input_count> clips_;

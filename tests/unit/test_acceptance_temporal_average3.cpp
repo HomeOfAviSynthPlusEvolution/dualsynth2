@@ -99,7 +99,8 @@ TEST_CASE("AcceptanceTemporalAverage3 exposes descriptor metadata and initialize
 
   REQUIRE(std::string(ds::acceptance::AcceptanceTemporalAverage3::name) == "AcceptanceTemporalAverage3");
   REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::input_count == 3);
-  REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::output_origin.kind == ds::OutputOriginKind::Fresh);
+  REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::output_origin.pixels == ds::OutputPixelPolicy::Fresh);
+  REQUIRE(ds::acceptance::AcceptanceTemporalAverage3::output_origin.prop_input_index == 1);
   REQUIRE(result.has_value());
   REQUIRE(result.value().output.width == 640);
   REQUIRE(result.value().output.height == 360);

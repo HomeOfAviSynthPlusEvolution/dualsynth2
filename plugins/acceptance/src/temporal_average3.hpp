@@ -65,7 +65,7 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
 struct AcceptanceTemporalAverage3 {
   static constexpr const char* name = "AcceptanceTemporalAverage3";
   static constexpr int input_count = 3;
-  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh(1);
 
   static Result<VideoInitResult> init(VideoInitContext& context) {
     if (context.inputs.size() != input_count) {

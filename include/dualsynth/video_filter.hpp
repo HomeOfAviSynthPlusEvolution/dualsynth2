@@ -95,36 +95,39 @@ struct VideoFilterInstance {
   VideoFilterState<Filter> state;
 };
 
-enum class OutputOriginKind {
+enum class OutputPixelPolicy {
   Fresh,
   CopyFromInput,
   TakeFromInput,
 };
 
 struct OutputOrigin {
-  OutputOriginKind kind = OutputOriginKind::Fresh;
-  int input_index = -1;
+  OutputPixelPolicy pixels = OutputPixelPolicy::Fresh;
+  int pixel_input_index = -1;
+  int prop_input_index = -1;
 
-  static constexpr OutputOrigin fresh() {
-    return OutputOrigin{OutputOriginKind::Fresh, -1};
+  static constexpr OutputOrigin fresh(int prop_input = 0) noexcept {
+    return OutputOrigin{OutputPixelPolicy::Fresh, -1, prop_input};
   }
 
-  static constexpr OutputOrigin copy_from_input(int index) {
-    return OutputOrigin{OutputOriginKind::CopyFromInput, index};
+  static constexpr OutputOrigin fresh_without_props() noexcept {
+    return OutputOrigin{OutputPixelPolicy::Fresh, -1, -1};
   }
 
-  // Move-like output construction contract.
-  //
-  // The output starts with the contents of the selected input, and the filter
-  // promises it does not need that input as a separate immutable source during
-  // processing. This gives hosts a reuse opportunity: AviSynth+ may call
-  // MakeWritable() and mutate the returned frame when possible, while
-  // VapourSynth must still materialize a writable copy because source frames
-  // are immutable. This is an optimization contract, not an aliasing contract:
-  // filters must not depend on dst sharing storage with the input, and wrappers
-  // must preserve semantics even when reuse is impossible.
-  static constexpr OutputOrigin take_from_input(int index) {
-    return OutputOrigin{OutputOriginKind::TakeFromInput, index};
+  static constexpr OutputOrigin take_from_input(int input_index = 0) noexcept {
+    return OutputOrigin{OutputPixelPolicy::TakeFromInput, input_index, input_index};
+  }
+
+  static constexpr OutputOrigin take_from_input(int pixel_input, int prop_input) noexcept {
+    return OutputOrigin{OutputPixelPolicy::TakeFromInput, pixel_input, prop_input};
+  }
+
+  static constexpr OutputOrigin copy_from_input(int input_index = 0) noexcept {
+    return OutputOrigin{OutputPixelPolicy::CopyFromInput, input_index, input_index};
+  }
+
+  static constexpr OutputOrigin copy_from_input(int pixel_input, int prop_input) noexcept {
+    return OutputOrigin{OutputPixelPolicy::CopyFromInput, pixel_input, prop_input};
   }
 };
 
@@ -220,18 +223,26 @@ inline Result<VideoRequestResult> request_output_origin_frame(
   std::span<const VideoInputInfo> inputs,
   std::vector<VideoFrameRequest>& requests
 ) {
-  if (origin.kind == OutputOriginKind::Fresh) {
-    return Result<VideoRequestResult>::success(VideoRequestResult{});
-  }
-
-  if (origin.input_index < 0 || static_cast<std::size_t>(origin.input_index) >= inputs.size()) {
-    return Result<VideoRequestResult>::failure(
-      Error{ErrorCode::InvalidArgument, "DualSynth: output origin input index is out of range"}
-    );
-  }
-
   VideoRequestContext context{output_frame, requests, inputs};
-  context.request_frame(origin.input_index, output_frame);
+
+  if (origin.pixels != OutputPixelPolicy::Fresh && origin.pixel_input_index >= 0) {
+    if (origin.pixel_input_index < 0 || static_cast<std::size_t>(origin.pixel_input_index) >= inputs.size()) {
+      return Result<VideoRequestResult>::failure(
+        Error{ErrorCode::InvalidArgument, "DualSynth: output origin pixel input index is out of range"}
+      );
+    }
+    context.request_frame(origin.pixel_input_index, output_frame);
+  }
+
+  if (origin.prop_input_index >= 0) {
+    if (origin.prop_input_index < 0 || static_cast<std::size_t>(origin.prop_input_index) >= inputs.size()) {
+      return Result<VideoRequestResult>::failure(
+        Error{ErrorCode::InvalidArgument, "DualSynth: output origin prop input index is out of range"}
+      );
+    }
+    context.request_frame(origin.prop_input_index, output_frame);
+  }
+
   return Result<VideoRequestResult>::success(VideoRequestResult{});
 }
 

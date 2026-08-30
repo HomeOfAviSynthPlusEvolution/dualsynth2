@@ -160,16 +160,17 @@ inline VSFrame* new_output_frame(
   const VSVideoInfo& video_info,
   VideoFormat output_format,
   OutputOrigin origin,
-  const VSFrame* origin_frame,
+  const VSFrame* pixel_frame,
+  const VSFrame* prop_frame,
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  if (origin.kind == OutputOriginKind::Fresh || origin_frame == nullptr) {
+  if (origin.pixels == OutputPixelPolicy::Fresh || pixel_frame == nullptr) {
     return vsapi->newVideoFrame(
       &video_info.format,
       video_info.width,
       video_info.height,
-      nullptr,
+      prop_frame,
       core
     );
   }
@@ -177,7 +178,7 @@ inline VSFrame* new_output_frame(
   std::array<const VSFrame*, 4> plane_sources{};
   std::array<int, 4> planes{};
   for (int plane = 0; plane < output_format.plane_count; ++plane) {
-    plane_sources[static_cast<std::size_t>(plane)] = origin_frame;
+    plane_sources[static_cast<std::size_t>(plane)] = pixel_frame;
     planes[static_cast<std::size_t>(plane)] = plane;
   }
 
@@ -187,7 +188,7 @@ inline VSFrame* new_output_frame(
     video_info.height,
     plane_sources.data(),
     planes.data(),
-    origin_frame,
+    prop_frame,
     core
   );
 }
@@ -265,12 +266,23 @@ const VSFrame* execute_process_frame(
   using Filter = typename Bridge::Core;
   const OutputOrigin origin = filter_output_origin<Filter>();
 
-  const VSFrame* origin_frame = nullptr;
-  if (origin.kind != OutputOriginKind::Fresh) {
+  const VSFrame* pixel_frame = nullptr;
+  if (origin.pixels != OutputPixelPolicy::Fresh && origin.pixel_input_index >= 0) {
     for (std::size_t i = 0; i < requests.size(); ++i) {
-      if (requests[i].input_index == origin.input_index &&
+      if (requests[i].input_index == origin.pixel_input_index &&
           requests[i].frame_number == n) {
-        origin_frame = holder.frames[i];
+        pixel_frame = holder.frames[i];
+        break;
+      }
+    }
+  }
+
+  const VSFrame* prop_frame = nullptr;
+  if (origin.prop_input_index >= 0) {
+    for (std::size_t i = 0; i < requests.size(); ++i) {
+      if (requests[i].input_index == origin.prop_input_index &&
+          requests[i].frame_number == n) {
+        prop_frame = holder.frames[i];
         break;
       }
     }
@@ -280,7 +292,8 @@ const VSFrame* execute_process_frame(
     data->video_info,
     data->output_format,
     origin,
-    origin_frame,
+    pixel_frame,
+    prop_frame,
     core,
     vsapi
   );

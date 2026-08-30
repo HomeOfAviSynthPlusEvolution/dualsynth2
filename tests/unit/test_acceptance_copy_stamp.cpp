@@ -53,7 +53,9 @@ TEST_CASE("AcceptanceCopyStamp declares copied output and stamps the copied fram
 
   const auto process = ds::acceptance::AcceptanceCopyStamp::process(context);
 
-  REQUIRE(ds::acceptance::AcceptanceCopyStamp::output_origin.kind == ds::OutputOriginKind::CopyFromInput);
+  REQUIRE(ds::acceptance::AcceptanceCopyStamp::output_origin.pixels == ds::OutputPixelPolicy::CopyFromInput);
+  REQUIRE(ds::acceptance::AcceptanceCopyStamp::output_origin.pixel_input_index == 0);
+  REQUIRE(ds::acceptance::AcceptanceCopyStamp::output_origin.prop_input_index == 0);
   REQUIRE(init.has_value());
   REQUIRE(init.value().output.format == input.format);
   REQUIRE(process.has_value());

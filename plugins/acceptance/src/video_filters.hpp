@@ -100,7 +100,7 @@ inline bool transposed_dimensions_match(span2d::Plane<const std::uint8_t> src, s
 struct VideoIdentity {
   static constexpr const char* name = "VideoIdentity";
   static constexpr int input_count = 1;
-  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+  static constexpr OutputOrigin output_origin = OutputOrigin::take_from_input(0);
 
   static Result<VideoInitResult> init(VideoInitContext& context) {
     return init_single_input_same_size(context, name);
@@ -131,7 +131,7 @@ struct VideoIdentity {
 struct VideoInvert {
   static constexpr const char* name = "VideoInvert";
   static constexpr int input_count = 1;
-  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+  static constexpr OutputOrigin output_origin = OutputOrigin::take_from_input(0);
 
   static Result<VideoInitResult> init(VideoInitContext& context) {
     return init_single_input_same_size(context, name);
@@ -162,7 +162,7 @@ struct VideoInvert {
 struct VideoTranspose {
   static constexpr const char* name = "VideoTranspose";
   static constexpr int input_count = 1;
-  static constexpr OutputOrigin output_origin = OutputOrigin::fresh();
+  static constexpr OutputOrigin output_origin = OutputOrigin::fresh(0);
 
   static Result<VideoInitResult> init(VideoInitContext& context) {
     return init_single_input_transposed(context, name);

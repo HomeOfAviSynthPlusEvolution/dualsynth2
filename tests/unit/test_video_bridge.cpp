@@ -138,8 +138,8 @@ TEST_CASE("Output origin requests its source frame and rejects invalid inputs") 
     inputs,
     requests
   );
-  const auto fresh_result = ds::request_output_origin_frame(
-    ds::OutputOrigin::fresh(),
+  const auto fresh_without_props_result = ds::request_output_origin_frame(
+    ds::OutputOrigin::fresh_without_props(),
     4,
     inputs,
     requests
@@ -152,9 +152,19 @@ TEST_CASE("Output origin requests its source frame and rejects invalid inputs") 
   );
 
   REQUIRE(copy_result.has_value());
-  REQUIRE(fresh_result.has_value());
+  REQUIRE(fresh_without_props_result.has_value());
   REQUIRE(requests.size() == 1);
   REQUIRE(requests[0] == ds::VideoFrameRequest{1, 4});
   REQUIRE_FALSE(invalid_result.has_value());
   REQUIRE(invalid_result.error().code == ds::ErrorCode::InvalidArgument);
+
+  const auto fresh_with_props_result = ds::request_output_origin_frame(
+    ds::OutputOrigin::fresh(0),
+    4,
+    inputs,
+    requests
+  );
+  REQUIRE(fresh_with_props_result.has_value());
+  REQUIRE(requests.size() == 2);
+  REQUIRE(requests[1] == ds::VideoFrameRequest{0, 4});
 }
