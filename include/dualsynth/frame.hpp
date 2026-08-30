@@ -1,7 +1,7 @@
 #pragma once
 
 #include <dualsynth/format.hpp>
-#include <dualsynth/mdspan.hpp>
+#include <dualsynth/span2d.hpp>
 
 #include <array>
 #include <cstddef>
@@ -59,8 +59,8 @@ struct MutableVideoFrameView {
 };
 
 template <class T>
-PlaneView2D<const T> as_plane_view(const PlaneView& plane) {
-  return make_plane_view(
+span2d::Plane<const T> as_plane(const PlaneView& plane) {
+  return span2d::make_plane(
     static_cast<const T*>(plane.data),
     plane.width,
     plane.height,
@@ -69,8 +69,8 @@ PlaneView2D<const T> as_plane_view(const PlaneView& plane) {
 }
 
 template <class T>
-PlaneView2D<T> as_plane_view(const MutablePlaneView& plane) {
-  return make_plane_view(
+span2d::Plane<T> as_plane(const MutablePlaneView& plane) {
+  return span2d::make_plane(
     static_cast<T*>(plane.data),
     plane.width,
     plane.height,
