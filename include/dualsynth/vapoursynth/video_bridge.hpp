@@ -266,6 +266,58 @@ inline VSFrame* new_output_frame(
 }
 
 template <class Bridge>
+const VSFrame* process_frame(
+  int n,
+  VideoFilterData<Bridge>* data,
+  VSFrameContext* frame_ctx,
+  VSCore* core,
+  const VSAPI* vsapi
+) {
+  using Filter = typename Bridge::Core;
+  const OutputOrigin origin = filter_output_origin<Filter>();
+  const VSFrame* origin_frame = output_origin_frame(origin, n, data, frame_ctx, vsapi);
+  VSFrame* dst = new_output_frame(
+    data->video_info,
+    data->output_format,
+    origin,
+    origin_frame,
+    core,
+    vsapi
+  );
+
+  if (origin_frame != nullptr) {
+    vsapi->freeFrame(origin_frame);
+    origin_frame = nullptr;
+  }
+
+  if (dst == nullptr) {
+    vsapi->setFilterError("DualSynth: failed to allocate VapourSynth output frame", frame_ctx);
+    return nullptr;
+  }
+
+  VideoFrameProvider<VideoFilterData<Bridge>::input_count> provider(
+    data->nodes,
+    data->input_infos,
+    frame_ctx,
+    vsapi
+  );
+  const auto result = process_video_filter<Filter>(
+    n,
+    provider,
+    make_mutable_video_frame_view(dst, data->output_format, vsapi),
+    data->state
+  );
+
+  if (!result.has_value()) {
+    vsapi->freeFrame(dst);
+    vsapi->setFilterError(result.error().message.c_str(), frame_ctx);
+    return nullptr;
+  }
+
+  return dst;
+}
+
+template <class Bridge>
 const VSFrame* VS_CC video_filter_get_frame(
   int n,
   int activation_reason,
@@ -277,8 +329,6 @@ const VSFrame* VS_CC video_filter_get_frame(
 ) {
   using Filter = typename Bridge::Core;
   auto* data = static_cast<VideoFilterData<Bridge>*>(instance_data);
-  const VSFrame* origin_frame = nullptr;
-  VSFrame* dst = nullptr;
 
   try {
     if (activation_reason == arInitial) {
@@ -311,6 +361,30 @@ const VSFrame* VS_CC video_filter_get_frame(
           vsapi->setFilterError("DualSynth: video input index is out of range", frame_ctx);
           return nullptr;
         }
+      }
+
+      // Check if Direct-Pass fast path is possible:
+      // Probe if all requested frames are already cached / immediately available.
+      bool can_direct_pass = true;
+      for (const auto& request : requests) {
+        const VSFrame* test = vsapi->getFrameFilter(
+          request.frame_number,
+          data->nodes[static_cast<std::size_t>(request.input_index)],
+          frame_ctx
+        );
+        if (test == nullptr) {
+          can_direct_pass = false;
+          break;
+        }
+        vsapi->freeFrame(test);
+      }
+
+      if (can_direct_pass) {
+        return process_frame<Bridge>(n, data, frame_ctx, core, vsapi);
+      }
+
+      // Fallback: asynchronous multi-pass scheduling
+      for (const auto& request : requests) {
         vsapi->requestFrameFilter(
           request.frame_number,
           data->nodes[static_cast<std::size_t>(request.input_index)],
@@ -324,66 +398,11 @@ const VSFrame* VS_CC video_filter_get_frame(
       return nullptr;
     }
 
-    const OutputOrigin origin = filter_output_origin<Filter>();
-    origin_frame = output_origin_frame(origin, n, data, frame_ctx, vsapi);
-    dst = new_output_frame(
-      data->video_info,
-      data->output_format,
-      origin,
-      origin_frame,
-      core,
-      vsapi
-    );
-
-    if (origin_frame != nullptr) {
-      vsapi->freeFrame(origin_frame);
-      origin_frame = nullptr;
-    }
-
-    if (dst == nullptr) {
-      vsapi->setFilterError("DualSynth: failed to allocate VapourSynth output frame", frame_ctx);
-      return nullptr;
-    }
-
-    VideoFrameProvider<VideoFilterData<Bridge>::input_count> provider(
-      data->nodes,
-      data->input_infos,
-      frame_ctx,
-      vsapi
-    );
-    const auto result = process_video_filter<Filter>(
-      n,
-      provider,
-      make_mutable_video_frame_view(dst, data->output_format, vsapi),
-      data->state
-    );
-
-    if (!result.has_value()) {
-      vsapi->freeFrame(dst);
-      dst = nullptr;
-      vsapi->setFilterError(result.error().message.c_str(), frame_ctx);
-      return nullptr;
-    }
-
-    VSFrame* output = dst;
-    dst = nullptr;
-    return output;
+    return process_frame<Bridge>(n, data, frame_ctx, core, vsapi);
   } catch (const std::exception& error) {
-    if (origin_frame != nullptr) {
-      vsapi->freeFrame(origin_frame);
-    }
-    if (dst != nullptr) {
-      vsapi->freeFrame(dst);
-    }
     vsapi->setFilterError(error.what(), frame_ctx);
     return nullptr;
   } catch (...) {
-    if (origin_frame != nullptr) {
-      vsapi->freeFrame(origin_frame);
-    }
-    if (dst != nullptr) {
-      vsapi->freeFrame(dst);
-    }
     vsapi->setFilterError("DualSynth: unhandled exception in VapourSynth video wrapper", frame_ctx);
     return nullptr;
   }
