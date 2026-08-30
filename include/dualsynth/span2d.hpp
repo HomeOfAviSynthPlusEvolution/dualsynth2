@@ -44,7 +44,8 @@ public:
   [[nodiscard]] constexpr size_type size_bytes() const noexcept { return size_ * sizeof(T); }
   [[nodiscard]] constexpr bool empty() const noexcept { return size_ == 0; }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE reference operator[](size_type idx) const noexcept {
+  template <class Index, typename = std::enable_if_t<std::is_integral_v<Index>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE reference operator[](Index idx) const noexcept {
     return data_[idx];
   }
 
@@ -58,7 +59,7 @@ public:
   }
 
 private:
-  pointer data_ = nullptr;
+  pointer SPAN2D_RESTRICT data_ = nullptr;
   size_type size_ = 0;
 };
 
@@ -132,7 +133,7 @@ public:
   [[nodiscard]] constexpr bool operator!=(const RowCursor& other) const noexcept { return ptr_ != other.ptr_; }
 
 private:
-  pointer ptr_ = nullptr;
+  pointer SPAN2D_RESTRICT ptr_ = nullptr;
   size_type width_ = 0;
   difference_type stride_ = 0;
 };
@@ -171,11 +172,13 @@ public:
   [[nodiscard]] constexpr std::ptrdiff_t stride_bytes() const noexcept { return stride_ * sizeof(T); }
   [[nodiscard]] constexpr bool empty() const noexcept { return width_ == 0 || height_ == 0; }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE reference operator()(size_type y, size_type x) const noexcept {
+  template <class IndexY, class IndexX,
+            typename = std::enable_if_t<std::is_integral_v<IndexY> && std::is_integral_v<IndexX>>>
+  [[nodiscard]] SPAN2D_FORCEINLINE reference operator()(IndexY y, IndexX x) const noexcept {
     return data_[static_cast<std::size_t>(y) * stride_ + x];
   }
 
-  [[nodiscard]] SPAN2D_FORCEINLINE pointer row_ptr(size_type y) const noexcept {
+  [[nodiscard]] SPAN2D_FORCEINLINE pointer SPAN2D_RESTRICT row_ptr(size_type y) const noexcept {
     return data_ + static_cast<std::size_t>(y) * stride_;
   }
 
@@ -195,7 +198,7 @@ public:
   }
 
 private:
-  pointer data_ = nullptr;
+  pointer SPAN2D_RESTRICT data_ = nullptr;
   size_type width_ = 0;
   size_type height_ = 0;
   difference_type stride_ = 0;
