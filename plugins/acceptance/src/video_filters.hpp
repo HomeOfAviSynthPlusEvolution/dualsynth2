@@ -1,6 +1,6 @@
 #pragma once
 
-#include <dualsynth/mdspan.hpp>
+#include <dualsynth/span2d.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
 
@@ -12,10 +12,12 @@
 namespace ds::reference {
 
 template <class T>
-void copy_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
-  for (std::size_t y = 0; y < src.extent(0); ++y) {
-    for (std::size_t x = 0; x < src.extent(1); ++x) {
-      dst[y, x] = src[y, x];
+void copy_plane(span2d::Plane<const T> src, span2d::Plane<T> dst) {
+  for (int y = 0; y < src.height(); ++y) {
+    auto src_row = src.row(y);
+    auto dst_row = dst.row(y);
+    for (std::size_t x = 0; x < src_row.size(); ++x) {
+      dst_row[x] = src_row[x];
     }
   }
 }
@@ -32,20 +34,22 @@ constexpr T max_sample_value() {
 }
 
 template <class T>
-void invert_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
+void invert_plane(span2d::Plane<const T> src, span2d::Plane<T> dst) {
   const T max_value = max_sample_value<T>();
-  for (std::size_t y = 0; y < src.extent(0); ++y) {
-    for (std::size_t x = 0; x < src.extent(1); ++x) {
-      dst[y, x] = static_cast<T>(max_value - src[y, x]);
+  for (int y = 0; y < src.height(); ++y) {
+    auto src_row = src.row(y);
+    auto dst_row = dst.row(y);
+    for (std::size_t x = 0; x < src_row.size(); ++x) {
+      dst_row[x] = static_cast<T>(max_value - src_row[x]);
     }
   }
 }
 
 template <class T>
-void transpose_plane(PlaneView2D<const T> src, PlaneView2D<T> dst) {
-  for (std::size_t y = 0; y < src.extent(0); ++y) {
-    for (std::size_t x = 0; x < src.extent(1); ++x) {
-      dst[x, y] = src[y, x];
+void transpose_plane(span2d::Plane<const T> src, span2d::Plane<T> dst) {
+  for (int y = 0; y < src.height(); ++y) {
+    for (int x = 0; x < src.width(); ++x) {
+      dst(x, y) = src(y, x);
     }
   }
 }
@@ -85,12 +89,12 @@ inline Result<RequestedVideoFrame> get_current_input_frame(VideoProcessContext& 
   return context.frames.get(0, context.output_frame);
 }
 
-inline bool dimensions_match(PlaneView2D<const std::uint8_t> src, PlaneView2D<std::uint8_t> dst) {
-  return src.extent(1) == dst.extent(1) && src.extent(0) == dst.extent(0);
+inline bool dimensions_match(span2d::Plane<const std::uint8_t> src, span2d::Plane<std::uint8_t> dst) {
+  return src.width() == dst.width() && src.height() == dst.height();
 }
 
-inline bool transposed_dimensions_match(PlaneView2D<const std::uint8_t> src, PlaneView2D<std::uint8_t> dst) {
-  return src.extent(1) == dst.extent(0) && src.extent(0) == dst.extent(1);
+inline bool transposed_dimensions_match(span2d::Plane<const std::uint8_t> src, span2d::Plane<std::uint8_t> dst) {
+  return src.width() == dst.height() && src.height() == dst.width();
 }
 
 struct VideoIdentity {
@@ -111,8 +115,8 @@ struct VideoIdentity {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
+    const auto src = as_plane<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane<std::uint8_t>(context.dst.plane(0));
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoIdentity frame dimensions do not match output"}
@@ -142,8 +146,8 @@ struct VideoInvert {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
+    const auto src = as_plane<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane<std::uint8_t>(context.dst.plane(0));
     if (!dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoInvert frame dimensions do not match output"}
@@ -173,8 +177,8 @@ struct VideoTranspose {
     if (!frame.has_value()) {
       return Result<VideoProcessResult>::failure(frame.error());
     }
-    const auto src = as_plane_view<std::uint8_t>(frame.value().frame.plane(0));
-    const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
+    const auto src = as_plane<std::uint8_t>(frame.value().frame.plane(0));
+    const auto dst = as_plane<std::uint8_t>(context.dst.plane(0));
     if (!transposed_dimensions_match(src, dst)) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "VideoTranspose frame dimensions do not match output"}

@@ -29,28 +29,32 @@ inline Result<VideoProcessResult> temporal_average3_process(VideoProcessContext&
     }
   }
 
-  const auto a = as_plane_view<std::uint8_t>(frames[0].value().frame.plane(0));
-  const auto b = as_plane_view<std::uint8_t>(frames[1].value().frame.plane(0));
-  const auto c = as_plane_view<std::uint8_t>(frames[2].value().frame.plane(0));
-  const auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
+  const auto a = as_plane<std::uint8_t>(frames[0].value().frame.plane(0));
+  const auto b = as_plane<std::uint8_t>(frames[1].value().frame.plane(0));
+  const auto c = as_plane<std::uint8_t>(frames[2].value().frame.plane(0));
+  const auto dst = as_plane<std::uint8_t>(context.dst.plane(0));
 
-  if (a.extent(1) != dst.extent(1) ||
-      b.extent(1) != dst.extent(1) ||
-      c.extent(1) != dst.extent(1) ||
-      a.extent(0) != dst.extent(0) ||
-      b.extent(0) != dst.extent(0) ||
-      c.extent(0) != dst.extent(0)) {
+  if (a.width() != dst.width() ||
+      b.width() != dst.width() ||
+      c.width() != dst.width() ||
+      a.height() != dst.height() ||
+      b.height() != dst.height() ||
+      c.height() != dst.height()) {
     return Result<VideoProcessResult>::failure(
       Error{ErrorCode::InvalidArgument, "AcceptanceTemporalAverage3 frame dimensions do not match output"}
     );
   }
 
-  for (std::size_t y = 0; y < dst.extent(0); ++y) {
-    for (std::size_t x = 0; x < dst.extent(1); ++x) {
-      dst[y, x] = static_cast<std::uint8_t>(
-        (static_cast<int>(a[y, x]) +
-         static_cast<int>(b[y, x]) +
-         static_cast<int>(c[y, x])) / 3
+  for (int y = 0; y < dst.height(); ++y) {
+    auto a_row = a.row(y);
+    auto b_row = b.row(y);
+    auto c_row = c.row(y);
+    auto dst_row = dst.row(y);
+    for (std::size_t x = 0; x < dst_row.size(); ++x) {
+      dst_row[x] = static_cast<std::uint8_t>(
+        (static_cast<int>(a_row[x]) +
+         static_cast<int>(b_row[x]) +
+         static_cast<int>(c_row[x])) / 3
       );
     }
   }

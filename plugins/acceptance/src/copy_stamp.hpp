@@ -37,14 +37,14 @@ struct AcceptanceCopyStamp {
   }
 
   static Result<VideoProcessResult> process(VideoProcessContext& context) {
-    auto dst = as_plane_view<std::uint8_t>(context.dst.plane(0));
-    if (dst.extent(0) == 0 || dst.extent(1) == 0) {
+    auto dst = as_plane<std::uint8_t>(context.dst.plane(0));
+    if (dst.empty()) {
       return Result<VideoProcessResult>::failure(
         Error{ErrorCode::InvalidArgument, "AcceptanceCopyStamp received an empty output frame"}
       );
     }
 
-    dst[0, 0] = 255;
+    dst(0, 0) = 255;
     return Result<VideoProcessResult>::success(VideoProcessResult{});
   }
 };
