@@ -131,60 +131,6 @@ inline MutableVideoFrameView make_mutable_video_frame_view(
   return MutableVideoFrameView{format, format.plane_count, planes};
 }
 
-template <std::size_t InputCount>
-class VideoFrameProvider final : public ds::VideoFrameProvider {
-public:
-  VideoFrameProvider(
-    std::span<VSNode*> nodes,
-    std::span<const VideoInputInfo> input_infos,
-    VSFrameContext* frame_ctx,
-    const VSAPI* vsapi
-  ) : nodes_(nodes),
-      input_infos_(input_infos),
-      frame_ctx_(frame_ctx),
-      vsapi_(vsapi) {}
-
-  ~VideoFrameProvider() override {
-    for (const VSFrame* frame : frames_) {
-      if (frame != nullptr) {
-        vsapi_->freeFrame(frame);
-      }
-    }
-  }
-
-  Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
-    if (input_index < 0 || input_index >= static_cast<int>(nodes_.size())) {
-      return Result<RequestedVideoFrame>::failure(
-        Error{ErrorCode::InvalidArgument, "DualSynth: video input index is out of range"}
-      );
-    }
-
-    const auto index = static_cast<std::size_t>(input_index);
-    const VSFrame* frame = vsapi_->getFrameFilter(frame_number, nodes_[index], frame_ctx_);
-    if (frame == nullptr) {
-      return Result<RequestedVideoFrame>::failure(
-        Error{ErrorCode::HostError, "DualSynth: VapourSynth did not provide the requested frame"}
-      );
-    }
-
-    frames_.push_back(frame);
-    return Result<RequestedVideoFrame>::success(
-      RequestedVideoFrame{
-        input_index,
-        frame_number,
-        make_video_frame_view(frame, input_infos_[index].format, vsapi_)
-      }
-    );
-  }
-
-private:
-  std::span<VSNode*> nodes_;
-  std::span<const VideoInputInfo> input_infos_;
-  VSFrameContext* frame_ctx_;
-  const VSAPI* vsapi_;
-  std::vector<const VSFrame*> frames_;
-};
-
 template <class Bridge>
 struct VideoFilterData {
   using Filter = typename Bridge::Core;
@@ -208,25 +154,6 @@ void free_video_filter_nodes(VideoFilterData<Bridge>* data, const VSAPI* vsapi) 
       vsapi->freeNode(node);
     }
   }
-}
-
-template <class Bridge>
-const VSFrame* output_origin_frame(
-  OutputOrigin origin,
-  int output_frame,
-  const VideoFilterData<Bridge>* data,
-  VSFrameContext* frame_ctx,
-  const VSAPI* vsapi
-) {
-  if (origin.kind == OutputOriginKind::Fresh) {
-    return nullptr;
-  }
-
-  return vsapi->getFrameFilter(
-    output_frame,
-    data->nodes[static_cast<std::size_t>(origin.input_index)],
-    frame_ctx
-  );
 }
 
 inline VSFrame* new_output_frame(
@@ -265,17 +192,90 @@ inline VSFrame* new_output_frame(
   );
 }
 
+struct AcquiredFramesHolder {
+  std::vector<const VSFrame*> frames;
+  const VSAPI* vsapi = nullptr;
+
+  ~AcquiredFramesHolder() {
+    if (vsapi != nullptr) {
+      for (const VSFrame* frame : frames) {
+        if (frame != nullptr) {
+          vsapi->freeFrame(frame);
+        }
+      }
+    }
+  }
+};
+
 template <class Bridge>
-const VSFrame* process_frame(
+class PreloadedVideoFrameProvider final : public ds::VideoFrameProvider {
+public:
+  PreloadedVideoFrameProvider(
+    std::span<const VideoFrameRequest> requests,
+    std::span<const VSFrame* const> frames,
+    std::span<const VideoInputInfo> input_infos,
+    const VSAPI* vsapi
+  ) : requests_(requests),
+      frames_(frames),
+      input_infos_(input_infos),
+      vsapi_(vsapi) {}
+
+  Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+      if (requests_[i].input_index == input_index &&
+          requests_[i].frame_number == frame_number) {
+        const VSFrame* frame = frames_[i];
+        if (frame == nullptr) {
+          return Result<RequestedVideoFrame>::failure(
+            Error{ErrorCode::HostError, "DualSynth: VapourSynth did not provide the requested frame"}
+          );
+        }
+        return Result<RequestedVideoFrame>::success(
+          RequestedVideoFrame{
+            input_index,
+            frame_number,
+            make_video_frame_view(frame, input_infos_[static_cast<std::size_t>(input_index)].format, vsapi_)
+          }
+        );
+      }
+    }
+
+    return Result<RequestedVideoFrame>::failure(
+      Error{ErrorCode::InvalidArgument, "DualSynth: requested video frame was not declared"}
+    );
+  }
+
+private:
+  std::span<const VideoFrameRequest> requests_;
+  std::span<const VSFrame* const> frames_;
+  std::span<const VideoInputInfo> input_infos_;
+  const VSAPI* vsapi_;
+};
+
+template <class Bridge>
+const VSFrame* execute_process_frame(
   int n,
   VideoFilterData<Bridge>* data,
+  std::span<const VideoFrameRequest> requests,
+  const AcquiredFramesHolder& holder,
   VSFrameContext* frame_ctx,
   VSCore* core,
   const VSAPI* vsapi
 ) {
   using Filter = typename Bridge::Core;
   const OutputOrigin origin = filter_output_origin<Filter>();
-  const VSFrame* origin_frame = output_origin_frame(origin, n, data, frame_ctx, vsapi);
+
+  const VSFrame* origin_frame = nullptr;
+  if (origin.kind != OutputOriginKind::Fresh) {
+    for (std::size_t i = 0; i < requests.size(); ++i) {
+      if (requests[i].input_index == origin.input_index &&
+          requests[i].frame_number == n) {
+        origin_frame = holder.frames[i];
+        break;
+      }
+    }
+  }
+
   VSFrame* dst = new_output_frame(
     data->video_info,
     data->output_format,
@@ -285,22 +285,18 @@ const VSFrame* process_frame(
     vsapi
   );
 
-  if (origin_frame != nullptr) {
-    vsapi->freeFrame(origin_frame);
-    origin_frame = nullptr;
-  }
-
   if (dst == nullptr) {
     vsapi->setFilterError("DualSynth: failed to allocate VapourSynth output frame", frame_ctx);
     return nullptr;
   }
 
-  VideoFrameProvider<VideoFilterData<Bridge>::input_count> provider(
-    data->nodes,
+  PreloadedVideoFrameProvider<Bridge> provider(
+    requests,
+    holder.frames,
     data->input_infos,
-    frame_ctx,
     vsapi
   );
+
   const auto result = process_video_filter<Filter>(
     n,
     provider,
@@ -331,56 +327,58 @@ const VSFrame* VS_CC video_filter_get_frame(
   auto* data = static_cast<VideoFilterData<Bridge>*>(instance_data);
 
   try {
+    std::vector<VideoFrameRequest> requests;
+    auto request_result = request_video_filter<Filter>(
+      n,
+      data->input_infos,
+      requests,
+      data->state
+    );
+    if (!request_result.has_value()) {
+      vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
+      return nullptr;
+    }
+
+    request_result = request_output_origin_frame(
+      filter_output_origin<Filter>(),
+      n,
+      data->input_infos,
+      requests
+    );
+    if (!request_result.has_value()) {
+      vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
+      return nullptr;
+    }
+
+    for (const auto& request : requests) {
+      if (request.input_index < 0 ||
+          request.input_index >= static_cast<int>(data->nodes.size())) {
+        vsapi->setFilterError("DualSynth: video input index is out of range", frame_ctx);
+        return nullptr;
+      }
+    }
+
     if (activation_reason == arInitial) {
-      std::vector<VideoFrameRequest> requests;
-      auto request_result = request_video_filter<Filter>(
-        n,
-        data->input_infos,
-        requests,
-        data->state
-      );
-      if (!request_result.has_value()) {
-        vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
-        return nullptr;
-      }
+      AcquiredFramesHolder holder{{}, vsapi};
+      holder.frames.reserve(requests.size());
 
-      request_result = request_output_origin_frame(
-        filter_output_origin<Filter>(),
-        n,
-        data->input_infos,
-        requests
-      );
-      if (!request_result.has_value()) {
-        vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
-        return nullptr;
-      }
-
+      bool all_ready = true;
       for (const auto& request : requests) {
-        if (request.input_index < 0 ||
-            request.input_index >= static_cast<int>(data->nodes.size())) {
-          vsapi->setFilterError("DualSynth: video input index is out of range", frame_ctx);
-          return nullptr;
-        }
-      }
-
-      // Check if Direct-Pass fast path is possible:
-      // Probe if all requested frames are already cached / immediately available.
-      bool can_direct_pass = true;
-      for (const auto& request : requests) {
-        const VSFrame* test = vsapi->getFrameFilter(
+        const VSFrame* frame = vsapi->getFrameFilter(
           request.frame_number,
           data->nodes[static_cast<std::size_t>(request.input_index)],
           frame_ctx
         );
-        if (test == nullptr) {
-          can_direct_pass = false;
+        if (frame == nullptr) {
+          all_ready = false;
           break;
         }
-        vsapi->freeFrame(test);
+        holder.frames.push_back(frame);
       }
 
-      if (can_direct_pass) {
-        return process_frame<Bridge>(n, data, frame_ctx, core, vsapi);
+      if (all_ready) {
+        // Direct-Pass fast path: zero redundant gets, exactly 1 acquisition per frame
+        return execute_process_frame<Bridge>(n, data, requests, holder, frame_ctx, core, vsapi);
       }
 
       // Fallback: asynchronous multi-pass scheduling
@@ -398,7 +396,22 @@ const VSFrame* VS_CC video_filter_get_frame(
       return nullptr;
     }
 
-    return process_frame<Bridge>(n, data, frame_ctx, core, vsapi);
+    AcquiredFramesHolder holder{{}, vsapi};
+    holder.frames.reserve(requests.size());
+    for (const auto& request : requests) {
+      const VSFrame* frame = vsapi->getFrameFilter(
+        request.frame_number,
+        data->nodes[static_cast<std::size_t>(request.input_index)],
+        frame_ctx
+      );
+      if (frame == nullptr) {
+        vsapi->setFilterError("DualSynth: VapourSynth did not provide requested frame in arAllFramesReady", frame_ctx);
+        return nullptr;
+      }
+      holder.frames.push_back(frame);
+    }
+
+    return execute_process_frame<Bridge>(n, data, requests, holder, frame_ctx, core, vsapi);
   } catch (const std::exception& error) {
     vsapi->setFilterError(error.what(), frame_ctx);
     return nullptr;
