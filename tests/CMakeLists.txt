@@ -14,6 +14,7 @@ add_executable(dualsynth_unit_tests
   unit/test_param.cpp
   unit/test_stateful_video_filter.cpp
   unit/test_mdspan.cpp
+  unit/test_span2d.cpp
   unit/test_video_bridge.cpp
   unit/test_global_lock.cpp
   unit/test_vapoursynth_video_bridge.cpp
