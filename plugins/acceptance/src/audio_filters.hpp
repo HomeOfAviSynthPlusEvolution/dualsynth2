@@ -1,15 +1,16 @@
 #pragma once
 
+#include <dualsynth/span2d.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <span>
 #include <type_traits>
 
 namespace ds::reference {
 
 template <class T>
-void copy_samples(std::span<const T> src, std::span<T> dst) {
+void copy_samples(Span<const T> src, Span<T> dst) {
   std::copy(src.begin(), src.end(), dst.begin());
 }
 
@@ -26,7 +27,7 @@ T scale_sample(T sample, double gain) {
 }
 
 template <class T>
-void gain_samples(std::span<const T> src, std::span<T> dst, double gain) {
+void gain_samples(Span<const T> src, Span<T> dst, double gain) {
   for (std::size_t i = 0; i < src.size(); ++i) {
     dst[i] = scale_sample(src[i], gain);
   }

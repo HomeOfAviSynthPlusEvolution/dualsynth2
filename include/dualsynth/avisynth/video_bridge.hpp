@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -472,7 +471,7 @@ inline MutableVideoFrameView make_mutable_video_frame_view(
 inline bool output_origin_matches(
   OutputOrigin origin,
   const VideoOutputInfo& output,
-  std::span<const VideoInputInfo> inputs
+  Span<const VideoInputInfo> inputs
 ) {
   if (origin.pixels == OutputPixelPolicy::Fresh) {
     if (origin.prop_input_index >= 0) {
@@ -523,8 +522,8 @@ template <std::size_t InputCount>
 class VideoFrameProvider final : public ds::VideoFrameProvider {
 public:
   VideoFrameProvider(
-    std::span<PClip> clips,
-    std::span<const VideoInputInfo> input_infos,
+    Span<PClip> clips,
+    Span<const VideoInputInfo> input_infos,
     IScriptEnvironment* env
   ) : clips_(clips),
       input_infos_(input_infos),
@@ -556,8 +555,8 @@ public:
   }
 
 private:
-  std::span<PClip> clips_;
-  std::span<const VideoInputInfo> input_infos_;
+  Span<PClip> clips_;
+  Span<const VideoInputInfo> input_infos_;
   IScriptEnvironment* env_;
   std::vector<PVideoFrame> frames_;
 };

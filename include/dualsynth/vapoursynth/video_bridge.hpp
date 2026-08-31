@@ -12,7 +12,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -212,9 +211,9 @@ template <class Bridge>
 class PreloadedVideoFrameProvider final : public ds::VideoFrameProvider {
 public:
   PreloadedVideoFrameProvider(
-    std::span<const VideoFrameRequest> requests,
-    std::span<const VSFrame* const> frames,
-    std::span<const VideoInputInfo> input_infos,
+    Span<const VideoFrameRequest> requests,
+    Span<const VSFrame* const> frames,
+    Span<const VideoInputInfo> input_infos,
     const VSAPI* vsapi
   ) : requests_(requests),
       frames_(frames),
@@ -247,9 +246,9 @@ public:
   }
 
 private:
-  std::span<const VideoFrameRequest> requests_;
-  std::span<const VSFrame* const> frames_;
-  std::span<const VideoInputInfo> input_infos_;
+  Span<const VideoFrameRequest> requests_;
+  Span<const VSFrame* const> frames_;
+  Span<const VideoInputInfo> input_infos_;
   const VSAPI* vsapi_;
 };
 
@@ -257,7 +256,7 @@ template <class Bridge>
 const VSFrame* execute_process_frame(
   int n,
   VideoFilterData<Bridge>* data,
-  std::span<const VideoFrameRequest> requests,
+  Span<const VideoFrameRequest> requests,
   const AcquiredFramesHolder& holder,
   VSFrameContext* frame_ctx,
   VSCore* core,
@@ -587,7 +586,7 @@ void create_video_filter_bridge(
 
 inline ParamValues read_optional_int_params(
   const VSMap* in,
-  std::span<const char* const> names,
+  Span<const char* const> names,
   const VSAPI* vsapi
 ) {
   ParamValues values{};

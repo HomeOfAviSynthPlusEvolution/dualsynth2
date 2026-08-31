@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -51,7 +50,7 @@ struct VideoOutputInfo {
 };
 
 struct VideoInitContext {
-  std::span<const VideoInputInfo> inputs;
+  Span<const VideoInputInfo> inputs;
   const ParamValues* params = nullptr;
   HostGlobalLockCallbacks host_global_locks{};
   HostVariableCallbacks host_variables{};
@@ -155,7 +154,7 @@ struct VideoRequestResult {};
 struct VideoRequestContext {
   int output_frame;
   std::vector<VideoFrameRequest>& requests;
-  std::span<const VideoInputInfo> inputs{};
+  Span<const VideoInputInfo> inputs{};
   const void* filter_state = nullptr;
 
   void request_frame(int input_index, int frame_number) {
@@ -198,7 +197,7 @@ struct VideoRequestContext {
 
 class RequestedVideoFrameProvider final : public VideoFrameProvider {
 public:
-  explicit RequestedVideoFrameProvider(std::span<const RequestedVideoFrame> frames)
+  explicit RequestedVideoFrameProvider(Span<const RequestedVideoFrame> frames)
     : frames_(frames) {}
 
   Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
@@ -214,13 +213,13 @@ public:
   }
 
 private:
-  std::span<const RequestedVideoFrame> frames_;
+  Span<const RequestedVideoFrame> frames_;
 };
 
 inline Result<VideoRequestResult> request_output_origin_frame(
   OutputOrigin origin,
   int output_frame,
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   std::vector<VideoFrameRequest>& requests
 ) {
   VideoRequestContext context{output_frame, requests, inputs};
@@ -280,7 +279,7 @@ struct VideoCacheHintsContext {
 
 template <class Filter>
 Result<std::array<VideoInputInfo, static_cast<std::size_t>(Filter::input_count)>>
-collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
+collect_video_input_infos(Span<const VideoInputInfo> inputs) {
   constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
   if (inputs.size() != input_count) {
     return Result<std::array<VideoInputInfo, input_count>>::failure(
@@ -299,20 +298,20 @@ collect_video_input_infos(std::span<const VideoInputInfo> inputs) {
 }
 
 template <class Filter>
-Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs) {
+Result<VideoInitResult> init_video_filter(Span<const VideoInputInfo> inputs) {
   VideoInitContext context{inputs, nullptr, {}, {}, HostKind::Unknown};
   return Filter::init(context);
 }
 
 template <class Filter>
-Result<VideoInitResult> init_video_filter(std::span<const VideoInputInfo> inputs, const ParamValues& params) {
+Result<VideoInitResult> init_video_filter(Span<const VideoInputInfo> inputs, const ParamValues& params) {
   VideoInitContext context{inputs, &params, {}, {}, HostKind::Unknown};
   return Filter::init(context);
 }
 
 template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   const ParamValues* params,
   HostGlobalLockCallbacks host_global_locks = {},
   HostVariableCallbacks host_variables = {},
@@ -343,7 +342,7 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
 
 template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   HostKind host = HostKind::Unknown
 ) {
   return init_video_filter_instance<Filter>(inputs, nullptr, {}, {}, host);
@@ -351,7 +350,7 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
 
 template <class Filter>
 Result<VideoFilterInstance<Filter>> init_video_filter_instance(
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   const ParamValues& params,
   HostKind host = HostKind::Unknown
 ) {
@@ -361,7 +360,7 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
 template <class Filter>
 Result<VideoRequestResult> request_video_filter(
   int output_frame,
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   std::vector<VideoFrameRequest>& requests,
   const VideoFilterState<Filter>* state = nullptr
 ) {
@@ -372,7 +371,7 @@ Result<VideoRequestResult> request_video_filter(
 template <class Filter>
 Result<VideoRequestResult> request_video_filter(
   int output_frame,
-  std::span<const VideoInputInfo> inputs,
+  Span<const VideoInputInfo> inputs,
   std::vector<VideoFrameRequest>& requests,
   const VideoFilterState<Filter>& state
 ) {

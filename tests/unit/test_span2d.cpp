@@ -220,6 +220,24 @@ TEST_CASE("span2d factory functions and ds namespace aliases work properly") {
   STATIC_REQUIRE(std::is_same_v<decltype(r), ds::Row<std::uint8_t>>);
   REQUIRE(r[5] == 42);
 
+  // Span aliases and container constructors
+  ds::Span<std::uint8_t> span_from_vec(buffer);
+  REQUIRE(span_from_vec.size() == 16);
+  REQUIRE(span_from_vec[0] == 42);
+
+  std::array<int, 4> arr{1, 2, 3, 4};
+  ds::Span<const int> span_from_arr(arr);
+  REQUIRE(span_from_arr.size() == 4);
+  REQUIRE(span_from_arr[2] == 3);
+
+  int c_arr[3] = {10, 20, 30};
+  ds::Span<int> span_from_c_arr(c_arr);
+  REQUIRE(span_from_c_arr.size() == 3);
+  REQUIRE(span_from_c_arr[1] == 20);
+
+  auto span_factory = ds::make_span(buffer.data(), buffer.size());
+  STATIC_REQUIRE(std::is_same_v<decltype(span_factory), ds::Span<std::uint8_t>>);
+
   // Restrict factory
   auto rp = ds::make_restrict_plane(buffer.data(), 4, 4, 4);
   STATIC_REQUIRE(std::is_same_v<decltype(rp), ds::RestrictPlane<std::uint8_t>>);

@@ -45,6 +45,26 @@ public:
 
   constexpr BasicRow() noexcept : data_(nullptr), size_(0) {}
   constexpr BasicRow(pointer data, size_type size) noexcept : data_(data), size_(size) {}
+  constexpr BasicRow(pointer first, pointer last) noexcept : data_(first), size_(static_cast<size_type>(last - first)) {}
+
+  template <std::size_t N>
+  constexpr BasicRow(T (&arr)[N]) noexcept : data_(arr), size_(N) {}
+
+  template <class Container,
+            typename = std::enable_if_t<
+              !std::is_same_v<std::decay_t<Container>, BasicRow> &&
+              !std::is_pointer_v<std::decay_t<Container>> &&
+              std::is_convertible_v<decltype(std::data(std::declval<Container&>())), pointer>>>
+  constexpr BasicRow(Container& c) noexcept
+    : data_(std::data(c)), size_(static_cast<size_type>(std::size(c))) {}
+
+  template <class Container,
+            typename = std::enable_if_t<
+              !std::is_same_v<std::decay_t<Container>, BasicRow> &&
+              !std::is_pointer_v<std::decay_t<Container>> &&
+              std::is_convertible_v<decltype(std::data(std::declval<const Container&>())), pointer>>>
+  constexpr BasicRow(const Container& c) noexcept
+    : data_(std::data(c)), size_(static_cast<size_type>(std::size(c))) {}
 
   // Conversion from non-const to const
   template <class U, bool OtherRestrict,
@@ -275,11 +295,13 @@ private:
 
 // Standard Safe Views (no restrict)
 template <class T> using Row               = BasicRow<T, false>;
+template <class T> using Span              = BasicRow<T, false>;
 template <class T> using RowCursor         = BasicRowCursor<T, false>;
 template <class T> using Plane             = BasicPlane<T, false>;
 
 // High-Performance Views (with restrict)
 template <class T> using RestrictRow       = BasicRow<T, true>;
+template <class T> using RestrictSpan      = BasicRow<T, true>;
 template <class T> using RestrictRowCursor = BasicRowCursor<T, true>;
 template <class T> using RestrictPlane     = BasicPlane<T, true>;
 
@@ -287,7 +309,9 @@ template <class T> using RestrictPlane     = BasicPlane<T, true>;
 template <class T> using ReadOnlyPlane             = Plane<const T>;
 template <class T> using ReadOnlyRestrictPlane     = RestrictPlane<const T>;
 template <class T> using ReadOnlyRow               = Row<const T>;
+template <class T> using ReadOnlySpan              = Span<const T>;
 template <class T> using ReadOnlyRestrictRow       = RestrictRow<const T>;
+template <class T> using ReadOnlyRestrictSpan      = RestrictSpan<const T>;
 template <class T> using ReadOnlyRowCursor         = RowCursor<const T>;
 template <class T> using ReadOnlyRestrictRowCursor = RestrictRowCursor<const T>;
 
@@ -349,6 +373,16 @@ constexpr RestrictRow<T> make_restrict_row(T* data, std::size_t size) noexcept {
   return RestrictRow<T>(data, size);
 }
 
+template <class T>
+constexpr Span<T> make_span(T* data, std::size_t size) noexcept {
+  return Span<T>(data, size);
+}
+
+template <class T>
+constexpr RestrictSpan<T> make_restrict_span(T* data, std::size_t size) noexcept {
+  return RestrictSpan<T>(data, size);
+}
+
 } // namespace span2d
 
 namespace ds {
@@ -357,6 +391,8 @@ template <class T> using Plane             = ::span2d::Plane<T>;
 template <class T> using RestrictPlane     = ::span2d::RestrictPlane<T>;
 template <class T> using Row               = ::span2d::Row<T>;
 template <class T> using RestrictRow       = ::span2d::RestrictRow<T>;
+template <class T> using Span              = ::span2d::Span<T>;
+template <class T> using RestrictSpan      = ::span2d::RestrictSpan<T>;
 template <class T> using RowCursor         = ::span2d::RowCursor<T>;
 template <class T> using RestrictRowCursor = ::span2d::RestrictRowCursor<T>;
 
@@ -364,6 +400,8 @@ template <class T> using ReadOnlyPlane             = ::span2d::ReadOnlyPlane<T>;
 template <class T> using ReadOnlyRestrictPlane     = ::span2d::ReadOnlyRestrictPlane<T>;
 template <class T> using ReadOnlyRow               = ::span2d::ReadOnlyRow<T>;
 template <class T> using ReadOnlyRestrictRow       = ::span2d::ReadOnlyRestrictRow<T>;
+template <class T> using ReadOnlySpan              = ::span2d::ReadOnlySpan<T>;
+template <class T> using ReadOnlyRestrictSpan      = ::span2d::ReadOnlyRestrictSpan<T>;
 template <class T> using ReadOnlyRowCursor         = ::span2d::ReadOnlyRowCursor<T>;
 template <class T> using ReadOnlyRestrictRowCursor = ::span2d::ReadOnlyRestrictRowCursor<T>;
 
@@ -371,6 +409,8 @@ using ::span2d::make_plane;
 using ::span2d::make_restrict_plane;
 using ::span2d::make_row;
 using ::span2d::make_restrict_row;
+using ::span2d::make_span;
+using ::span2d::make_restrict_span;
 using ::span2d::as_restrict;
 using ::span2d::as_unrestricted;
 

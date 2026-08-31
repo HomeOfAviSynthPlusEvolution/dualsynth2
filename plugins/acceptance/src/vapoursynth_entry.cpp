@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <span>
 
 namespace {
 
@@ -228,8 +227,8 @@ const VSFrame* VS_CC audio_gain_get_frame(
   const auto* src_samples = reinterpret_cast<const float*>(vsapi->getReadPtr(src, 0));
   auto* dst_samples = reinterpret_cast<float*>(vsapi->getWritePtr(dst, 0));
   ds::reference::gain_samples(
-    std::span<const float>(src_samples, static_cast<std::size_t>(sample_count)),
-    std::span<float>(dst_samples, static_cast<std::size_t>(sample_count)),
+    ds::Span<const float>(src_samples, static_cast<std::size_t>(sample_count)),
+    ds::Span<float>(dst_samples, static_cast<std::size_t>(sample_count)),
     data->gain
   );
 

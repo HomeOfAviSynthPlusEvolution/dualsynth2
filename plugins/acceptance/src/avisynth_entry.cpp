@@ -9,7 +9,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
 #include <vector>
 
 #if defined(_WIN32)
@@ -146,8 +145,8 @@ public:
 
     auto* output = static_cast<float*>(buf);
     ds::reference::gain_samples(
-      std::span<const float>(input.data(), input.size()),
-      std::span<float>(output, sample_count),
+      ds::Span<const float>(input.data(), input.size()),
+      ds::Span<float>(output, sample_count),
       gain_
     );
   }
