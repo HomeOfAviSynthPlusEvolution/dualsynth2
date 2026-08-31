@@ -23,7 +23,7 @@ target_include_directories(dualsynth_acceptance
     ${DS_VAPOURSYNTH_INCLUDE_DIR}
     ${DS_AVISYNTH_INCLUDE_DIR}
 )
-target_compile_features(dualsynth_acceptance PRIVATE cxx_std_23)
+target_compile_features(dualsynth_acceptance PRIVATE cxx_std_20)
 ds_apply_compiler_options(dualsynth_acceptance)
 
 if(MSVC AND DS_MSVC_RUNTIME_LIBRARY)

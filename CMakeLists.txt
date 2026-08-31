@@ -30,7 +30,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DualSynthCompilerOptions)
 include(FetchContent)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(dualsynth STATIC
@@ -52,7 +52,7 @@ if(MSVC AND DS_MSVC_RUNTIME_LIBRARY)
   )
 endif()
 
-target_compile_features(dualsynth PUBLIC cxx_std_23)
+target_compile_features(dualsynth PUBLIC cxx_std_20)
 target_include_directories(dualsynth
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

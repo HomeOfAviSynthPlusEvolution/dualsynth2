@@ -6,7 +6,7 @@ The goal is to let plugin authors keep filter logic in one C++ core while buildi
 
 ## Build
 
-DualSynth uses CMake and requires a C++23 compiler.
+DualSynth uses CMake and requires a C++20 compiler.
 
 ```sh
 cmake -S . -B build
