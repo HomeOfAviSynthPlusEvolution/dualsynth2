@@ -30,7 +30,12 @@ struct FrameRate {
   std::int64_t numerator = 0;
   std::int64_t denominator = 1;
 
-  friend constexpr bool operator==(const FrameRate&, const FrameRate&) = default;
+  friend constexpr bool operator==(const FrameRate& a, const FrameRate& b) noexcept {
+    return a.numerator == b.numerator && a.denominator == b.denominator;
+  }
+  friend constexpr bool operator!=(const FrameRate& a, const FrameRate& b) noexcept {
+    return !(a == b);
+  }
 };
 
 struct VideoInputInfo {
@@ -140,7 +145,12 @@ struct VideoFrameRequest {
   int input_index;
   int frame_number;
 
-  friend constexpr bool operator==(const VideoFrameRequest&, const VideoFrameRequest&) = default;
+  friend constexpr bool operator==(const VideoFrameRequest& a, const VideoFrameRequest& b) noexcept {
+    return a.input_index == b.input_index && a.frame_number == b.frame_number;
+  }
+  friend constexpr bool operator!=(const VideoFrameRequest& a, const VideoFrameRequest& b) noexcept {
+    return !(a == b);
+  }
 };
 
 class VideoFrameProvider {
@@ -408,6 +418,16 @@ Result<VideoProcessResult> process_video_filter(
   return process_video_filter<Filter>(output_frame, frames, dst, &state);
 }
 
+template <class Filter, class Context, class = void>
+struct filter_has_cache_hints : std::false_type {};
+
+template <class Filter, class Context>
+struct filter_has_cache_hints<
+  Filter,
+  Context,
+  std::void_t<decltype(Filter::cache_hints(std::declval<Context&>()))>
+> : std::true_type {};
+
 template <class Filter>
 int cache_hints_video_filter(
   int cachehints,
@@ -415,7 +435,7 @@ int cache_hints_video_filter(
   int default_response,
   VideoFilterState<Filter>* state = nullptr
 ) {
-  if constexpr (requires(VideoCacheHintsContext& context) { Filter::cache_hints(context); }) {
+  if constexpr (filter_has_cache_hints<Filter, VideoCacheHintsContext>::value) {
     VideoCacheHintsContext context{cachehints, frame_range, default_response, state};
     return Filter::cache_hints(context);
   } else {

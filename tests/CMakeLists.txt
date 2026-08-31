@@ -29,7 +29,7 @@ target_link_libraries(dualsynth_unit_tests
     Catch2::Catch2WithMain
 )
 
-target_compile_features(dualsynth_unit_tests PRIVATE cxx_std_20)
+target_compile_features(dualsynth_unit_tests PRIVATE cxx_std_17)
 ds_apply_compiler_options(dualsynth_unit_tests)
 target_include_directories(dualsynth_unit_tests
   PRIVATE
@@ -58,7 +58,7 @@ if(DS_AVISYNTH_INCLUDE_DIR)
   add_executable(dualsynth_avisynth_runner
     tools/avisynth_runner.cpp
   )
-  target_compile_features(dualsynth_avisynth_runner PRIVATE cxx_std_20)
+  target_compile_features(dualsynth_avisynth_runner PRIVATE cxx_std_17)
   ds_apply_compiler_options(dualsynth_avisynth_runner)
   target_include_directories(dualsynth_avisynth_runner
     PRIVATE

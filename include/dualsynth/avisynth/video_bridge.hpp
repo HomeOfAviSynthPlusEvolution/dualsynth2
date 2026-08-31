@@ -23,9 +23,15 @@
 
 namespace ds::avisynth {
 
+template <class Filter, class = void>
+struct filter_has_output_origin : std::false_type {};
+
+template <class Filter>
+struct filter_has_output_origin<Filter, std::void_t<decltype(Filter::output_origin)>> : std::true_type {};
+
 template <class Filter>
 constexpr OutputOrigin filter_output_origin() {
-  if constexpr (requires { Filter::output_origin; }) {
+  if constexpr (filter_has_output_origin<Filter>::value) {
     return Filter::output_origin;
   } else {
     return OutputOrigin::fresh();
@@ -42,11 +48,25 @@ inline constexpr int filter_mt_mode_interface_version = 8;
 inline constexpr bool compiled_with_filter_mt_mode =
   AVISYNTH_INTERFACE_VERSION >= filter_mt_mode_interface_version;
 
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 template <class Env>
 concept FilterMtModeRuntimeEnvironment = requires(Env* env, int version) {
   env->CheckVersion(version);
   { env->GetEnvProperty(AEP_VERSION) } -> std::convertible_to<std::size_t>;
 };
+#else
+template <class Env, class = void>
+struct filter_mt_mode_runtime_environment : std::false_type {};
+
+template <class Env>
+struct filter_mt_mode_runtime_environment<
+  Env,
+  std::void_t<
+    decltype(std::declval<Env*>()->CheckVersion(std::declval<int>())),
+    decltype(std::declval<Env*>()->GetEnvProperty(AEP_VERSION))
+  >
+> : std::true_type {};
+#endif
 
 inline ::MtMode host_mt_mode(MtMode mode) {
   switch (mode) {
@@ -66,7 +86,13 @@ inline bool runtime_matches_filter_mt_mode_abi(Env* env) noexcept {
     return false;
   }
 
-  if constexpr (compiled_with_filter_mt_mode && FilterMtModeRuntimeEnvironment<Env>) {
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
+  constexpr bool env_supported = FilterMtModeRuntimeEnvironment<Env>;
+#else
+  constexpr bool env_supported = filter_mt_mode_runtime_environment<Env>::value;
+#endif
+
+  if constexpr (compiled_with_filter_mt_mode && env_supported) {
     try {
       env->CheckVersion(filter_mt_mode_interface_version);
       return env->GetEnvProperty(AEP_VERSION) ==
@@ -122,9 +148,15 @@ inline void set_filter_mt_mode(
   }
 }
 
+template <class Bridge, class = void>
+struct bridge_has_avs_mt_mode : std::false_type {};
+
+template <class Bridge>
+struct bridge_has_avs_mt_mode<Bridge, std::void_t<decltype(Bridge::avs_mt_mode)>> : std::true_type {};
+
 template <class Bridge>
 constexpr MtMode bridge_mt_mode() {
-  if constexpr (requires { Bridge::avs_mt_mode; }) {
+  if constexpr (bridge_has_avs_mt_mode<Bridge>::value) {
     return Bridge::avs_mt_mode;
   } else {
     return MtMode::NiceFilter;
@@ -689,21 +721,40 @@ private:
   bool forward_audio_;
 };
 
+template <class Bridge, class Format, class = void>
+struct bridge_has_accepts_video_format : std::false_type {};
+
+template <class Bridge, class Format>
+struct bridge_has_accepts_video_format<
+  Bridge,
+  Format,
+  std::void_t<decltype(Bridge::accepts_video_format(std::declval<Format>()))>
+> : std::true_type {};
+
 template <class Bridge>
 bool accepts_video_format(VideoFormat format) {
-  if constexpr (requires { Bridge::accepts_video_format(format); }) {
+  if constexpr (bridge_has_accepts_video_format<Bridge, VideoFormat>::value) {
     return Bridge::accepts_video_format(format);
   } else {
     return true;
   }
 }
 
+template <class Bridge, class = void>
+struct bridge_has_descriptor : std::false_type {};
+
+template <class Bridge>
+struct bridge_has_descriptor<
+  Bridge,
+  std::void_t<decltype(Bridge::descriptor())>
+> : std::true_type {};
+
 inline Result<ParamValues> read_params(
   const AVSValue& args,
   const FilterDescriptor& descriptor
 );
 
-template <VideoBridge Bridge>
+template <DS_CONCEPT_VIDEO_BRIDGE Bridge>
 AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
   using Filter = typename Bridge::Core;
   constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
@@ -735,7 +786,7 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
     }
 
     auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
-      if constexpr (requires { Bridge::descriptor(); }) {
+      if constexpr (bridge_has_descriptor<Bridge>::value) {
         auto params = read_params(args, Bridge::descriptor());
         if (!params.has_value()) {
           return Result<VideoFilterInstance<Filter>>::failure(params.error());

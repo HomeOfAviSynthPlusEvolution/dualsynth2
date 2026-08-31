@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <dualsynth/span2d.hpp>
 
+#include <array>
 #include <cstdint>
 #include <type_traits>
 #include <vector>

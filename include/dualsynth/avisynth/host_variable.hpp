@@ -15,6 +15,7 @@
 
 namespace ds::avisynth {
 
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 template <class Env>
 concept HostVariableEnvironment = requires(
   Env* env,
@@ -25,6 +26,24 @@ concept HostVariableEnvironment = requires(
   { env->SaveString(text) } -> std::convertible_to<char*>;
   { env->SetVar(name, value) } -> std::convertible_to<bool>;
 };
+template <class Env>
+inline constexpr bool is_host_variable_environment_v = HostVariableEnvironment<Env>;
+#else
+template <class Env, class = void>
+struct is_host_variable_environment : std::false_type {};
+
+template <class Env>
+struct is_host_variable_environment<
+  Env,
+  std::void_t<
+    decltype(std::declval<Env*>()->SaveString(std::declval<const char*>())),
+    decltype(std::declval<Env*>()->SetVar(std::declval<const char*>(), std::declval<const AVSValue&>()))
+  >
+> : std::true_type {};
+
+template <class Env>
+inline constexpr bool is_host_variable_environment_v = is_host_variable_environment<Env>::value;
+#endif
 
 inline bool assign_avisynth_scalar_value(std::int64_t input, AVSValue& output) {
   if (
@@ -63,7 +82,7 @@ bool assign_avisynth_scalar_value(Env*, bool input, AVSValue& output) {
   return assign_avisynth_scalar_value(input, output);
 }
 
-template <HostVariableEnvironment Env>
+template <class Env>
 bool assign_avisynth_scalar_value(Env* env, const std::string& input, AVSValue& output) {
   if (!env) {
     return false;
@@ -73,7 +92,7 @@ bool assign_avisynth_scalar_value(Env* env, const std::string& input, AVSValue& 
   return true;
 }
 
-template <HostVariableEnvironment Env, class Value>
+template <class Env, class Value>
 bool assign_avisynth_array_value(Env* env, const std::vector<Value>& input, AVSValue& output) {
   if (input.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     return false;
@@ -97,7 +116,7 @@ bool assign_avisynth_array_value(Env* env, const std::vector<Value>& input, AVSV
   return true;
 }
 
-template <HostVariableEnvironment Env>
+template <class Env>
 bool assign_avisynth_value(Env* env, const ParamValue& input, AVSValue& output) {
   return std::visit(
     [&](const auto& value) -> bool {
@@ -120,7 +139,7 @@ bool assign_avisynth_value(Env* env, const ParamValue& input, AVSValue& output) 
   );
 }
 
-template <class Env, bool Supported = HostVariableEnvironment<Env>>
+template <class Env, bool Supported = is_host_variable_environment_v<Env>>
 struct HostVariableAdapter;
 
 template <class Env>

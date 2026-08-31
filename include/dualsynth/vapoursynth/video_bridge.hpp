@@ -18,9 +18,15 @@
 
 namespace ds::vapoursynth {
 
+template <class Filter, class = void>
+struct filter_has_output_origin : std::false_type {};
+
+template <class Filter>
+struct filter_has_output_origin<Filter, std::void_t<decltype(Filter::output_origin)>> : std::true_type {};
+
 template <class Filter>
 constexpr OutputOrigin filter_output_origin() {
-  if constexpr (requires { Filter::output_origin; }) {
+  if constexpr (filter_has_output_origin<Filter>::value) {
     return Filter::output_origin;
   } else {
     return OutputOrigin::fresh();
@@ -445,14 +451,33 @@ void VS_CC video_filter_free(void* instance_data, VSCore*, const VSAPI* vsapi) {
   delete data;
 }
 
+template <class Bridge, class Format, class = void>
+struct bridge_has_accepts_video_format : std::false_type {};
+
+template <class Bridge, class Format>
+struct bridge_has_accepts_video_format<
+  Bridge,
+  Format,
+  std::void_t<decltype(Bridge::accepts_video_format(std::declval<Format>()))>
+> : std::true_type {};
+
 template <class Bridge>
 bool accepts_video_format(VideoFormat format) {
-  if constexpr (requires { Bridge::accepts_video_format(format); }) {
+  if constexpr (bridge_has_accepts_video_format<Bridge, VideoFormat>::value) {
     return Bridge::accepts_video_format(format);
   } else {
     return true;
   }
 }
+
+template <class Bridge, class = void>
+struct bridge_has_descriptor : std::false_type {};
+
+template <class Bridge>
+struct bridge_has_descriptor<
+  Bridge,
+  std::void_t<decltype(Bridge::descriptor())>
+> : std::true_type {};
 
 inline Result<ParamValues> read_params(
   const VSMap* in,
@@ -460,7 +485,7 @@ inline Result<ParamValues> read_params(
   const VSAPI* vsapi
 );
 
-template <VideoBridge Bridge>
+template <DS_CONCEPT_VIDEO_BRIDGE Bridge>
 void create_video_filter_bridge(
   const VSMap* in,
   VSMap* out,
@@ -510,7 +535,7 @@ void create_video_filter_bridge(
     }
 
     auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
-      if constexpr (requires { Bridge::descriptor(); }) {
+      if constexpr (bridge_has_descriptor<Bridge>::value) {
         auto params = read_params(in, Bridge::descriptor(), vsapi);
         if (!params.has_value()) {
           return Result<VideoFilterInstance<Filter>>::failure(params.error());
@@ -747,7 +772,7 @@ inline Result<ParamValues> read_params(
   return Result<ParamValues>::success(std::move(values));
 }
 
-template <VideoBridge Bridge, class Creator>
+template <DS_CONCEPT_VIDEO_BRIDGE Bridge, class Creator>
 decltype(auto) create_video_filter_bridge(Creator&& creator) {
   return std::forward<Creator>(creator).template operator()<typename Bridge::Core>(
     Bridge::vs_input_names,

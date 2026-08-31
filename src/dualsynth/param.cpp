@@ -29,7 +29,7 @@ Error type_error(const std::string& name, std::string_view expected) {
 
 std::vector<std::string> split_array_tokens(std::string_view input) {
   std::string normalized(input);
-  std::ranges::replace(normalized, ',', ' ');
+  std::replace(normalized.begin(), normalized.end(), ',', ' ');
 
   std::istringstream stream(normalized);
   stream.imbue(std::locale::classic());
@@ -52,7 +52,7 @@ bool parse_token(const std::string& token, T& output) {
 
 bool parse_token(const std::string& token, bool& output) {
   std::string lowered(token);
-  std::ranges::transform(lowered, lowered.begin(), [](unsigned char ch) {
+  std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char ch) {
     return static_cast<char>(std::tolower(ch));
   });
 

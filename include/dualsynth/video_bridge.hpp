@@ -24,6 +24,7 @@ struct SingleInputVideoBridgeDefaults {
   static constexpr bool forward_audio = true;
 };
 
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 template <class Bridge>
 concept VideoBridge = requires {
   typename Bridge::Core;
@@ -38,6 +39,10 @@ concept VideoBridge = requires {
   Bridge::parity_source_index;
   Bridge::forward_audio;
 };
+#define DS_CONCEPT_VIDEO_BRIDGE ::ds::VideoBridge
+#else
+#define DS_CONCEPT_VIDEO_BRIDGE class
+#endif
 
 Result<std::string> make_vapoursynth_signature(const FilterDescriptor& descriptor);
 Result<std::string> make_avisynth_signature(const FilterDescriptor& descriptor);

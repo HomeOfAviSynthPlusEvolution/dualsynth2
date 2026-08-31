@@ -35,9 +35,11 @@ TEST_CASE("SingleInputVideoBridgeDefaults provides reusable host binding default
   REQUIRE(SampleBridge::forward_audio == true);
 }
 
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 TEST_CASE("VideoBridge concept accepts complete bridge metadata") {
   REQUIRE(ds::VideoBridge<CompleteBridge>);
 }
+#endif
 
 TEST_CASE("Video bridge signatures are generated from host-specific parameter metadata") {
   const ds::FilterDescriptor descriptor{

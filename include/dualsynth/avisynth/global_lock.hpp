@@ -9,14 +9,33 @@
 
 namespace ds::avisynth {
 
+#if defined(__cpp_concepts) && __cpp_concepts >= 201907L
 template <class Env>
 concept HostGlobalLockEnvironment = requires(Env* env, const char* name) {
   { env->AcquireGlobalLock(name) } -> std::convertible_to<bool>;
   env->ReleaseGlobalLock(name);
 };
+template <class Env>
+inline constexpr bool is_host_global_lock_environment_v = HostGlobalLockEnvironment<Env>;
+#else
+template <class Env, class = void>
+struct is_host_global_lock_environment : std::false_type {};
+
+template <class Env>
+struct is_host_global_lock_environment<
+  Env,
+  std::void_t<
+    decltype(std::declval<Env*>()->AcquireGlobalLock(std::declval<const char*>())),
+    decltype(std::declval<Env*>()->ReleaseGlobalLock(std::declval<const char*>()))
+  >
+> : std::true_type {};
+
+template <class Env>
+inline constexpr bool is_host_global_lock_environment_v = is_host_global_lock_environment<Env>::value;
+#endif
 
 inline constexpr bool compiled_with_host_global_locks =
-  HostGlobalLockEnvironment<IScriptEnvironment>;
+  is_host_global_lock_environment_v<IScriptEnvironment>;
 
 inline bool runtime_supports_host_global_locks(IScriptEnvironment* env) noexcept {
   if (!env) {
@@ -35,7 +54,7 @@ inline bool runtime_supports_host_global_locks(IScriptEnvironment* env) noexcept
   }
 }
 
-template <class Env, bool Supported = HostGlobalLockEnvironment<Env>>
+template <class Env, bool Supported = is_host_global_lock_environment_v<Env>>
 struct HostGlobalLockAdapter;
 
 template <class Env>

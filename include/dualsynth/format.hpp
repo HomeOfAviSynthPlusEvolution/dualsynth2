@@ -27,7 +27,16 @@ struct VideoFormat {
   int subsampling_w;
   int subsampling_h;
 
-  friend constexpr bool operator==(const VideoFormat&, const VideoFormat&) = default;
+  friend constexpr bool operator==(const VideoFormat& a, const VideoFormat& b) noexcept {
+    return a.color_family == b.color_family &&
+           a.sample_format == b.sample_format &&
+           a.plane_count == b.plane_count &&
+           a.subsampling_w == b.subsampling_w &&
+           a.subsampling_h == b.subsampling_h;
+  }
+  friend constexpr bool operator!=(const VideoFormat& a, const VideoFormat& b) noexcept {
+    return !(a == b);
+  }
 };
 
 enum class AudioSampleFormat {
@@ -42,7 +51,14 @@ struct AudioFormat {
   int sample_rate;
   int channels;
 
-  friend constexpr bool operator==(const AudioFormat&, const AudioFormat&) = default;
+  friend constexpr bool operator==(const AudioFormat& a, const AudioFormat& b) noexcept {
+    return a.sample_format == b.sample_format &&
+           a.sample_rate == b.sample_rate &&
+           a.channels == b.channels;
+  }
+  friend constexpr bool operator!=(const AudioFormat& a, const AudioFormat& b) noexcept {
+    return !(a == b);
+  }
 };
 
 Result<bool> is_supported_video_format(const VideoFormat& format);
