@@ -115,44 +115,35 @@ if(DS_BUILD_ACCEPTANCE_PLUGIN)
   endif()
 endif()
 
-set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN OFF)
-set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "disabled")
-
-if(DS_BUILD_ACCEPTANCE_PLUGIN)
-  if(WIN32)
-    if(MSVC)
-      set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
-      set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "windows-msvc-verified")
-    else()
-      set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "windows-non-msvc-unsupported")
-    endif()
-  elseif(APPLE)
-    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "macos-unverified")
-    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
-      set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
-    endif()
-  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "linux-verified")
-    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
-      set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
-    endif()
-  elseif(UNIX)
-    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "posix-other-unverified")
-    if(DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN)
-      set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
-    endif()
-  else()
-    set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "unsupported")
-  endif()
-
-  message(STATUS "AviSynth+ acceptance plugin platform status: ${DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS}")
+set(DS_AVISYNTH_SDK "" CACHE PATH "Optional path to an AviSynth+ SDK")
+set(_ds_avisynth_include_hints)
+if(DS_AVISYNTH_SDK)
+  list(APPEND _ds_avisynth_include_hints
+    "${DS_AVISYNTH_SDK}/include"
+    "${DS_AVISYNTH_SDK}/avs_core/include"
+    "${DS_AVISYNTH_SDK}"
+  )
 endif()
+if(DEFINED ENV{AVISYNTH_SDK})
+  list(APPEND _ds_avisynth_include_hints
+    "$ENV{AVISYNTH_SDK}/include"
+    "$ENV{AVISYNTH_SDK}/avs_core/include"
+    "$ENV{AVISYNTH_SDK}"
+  )
+endif()
+find_path(DS_AVISYNTH_INCLUDE_DIR
+  NAMES avisynth_c.h avisynth.h
+  HINTS ${_ds_avisynth_include_hints}
+)
+unset(_ds_avisynth_include_hints)
 
-if(DS_BUILD_ACCEPTANCE_PLUGIN AND DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN)
+set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
+set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "enabled")
+
+if(DS_BUILD_ACCEPTANCE_PLUGIN AND NOT DS_AVISYNTH_INCLUDE_DIR)
   FetchContent_Declare(
     AviSynthPlus
-    URL https://github.com/AviSynth/AviSynthPlus/archive/refs/tags/v3.7.5.zip
-    URL_HASH SHA256=b60cd796886a91d32e4f495ac29df19f14c99988dfdc5ef002ebb5fc4b1f0042
+    URL https://github.com/AviSynth/AviSynthPlus/archive/refs/heads/master.zip
   )
   FetchContent_GetProperties(AviSynthPlus)
   if(NOT avisynthplus_POPULATED)
@@ -165,7 +156,11 @@ if(DS_BUILD_ACCEPTANCE_PLUGIN AND DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN)
       cmake_policy(POP)
     endif()
   endif()
-  set(DS_AVISYNTH_INCLUDE_DIR "${avisynthplus_SOURCE_DIR}/avs_core/include")
+  set(DS_AVISYNTH_INCLUDE_DIR
+    "${avisynthplus_SOURCE_DIR}/avs_core/include"
+    CACHE PATH "Path to a directory containing avisynth.h and avisynth_c.h"
+    FORCE
+  )
 endif()
 
 if(DS_BUILD_ACCEPTANCE_PLUGIN AND (DS_VAPOURSYNTH_INCLUDE_DIR OR DS_AVISYNTH_INCLUDE_DIR))

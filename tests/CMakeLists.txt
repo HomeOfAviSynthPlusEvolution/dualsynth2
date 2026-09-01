@@ -45,6 +45,7 @@ if(DS_AVISYNTH_INCLUDE_DIR)
     PRIVATE
       unit/test_avisynth_global_lock.cpp
       unit/test_avisynth_video_bridge.cpp
+      unit/test_avisynth_c_video_bridge.cpp
   )
   target_include_directories(dualsynth_unit_tests PRIVATE ${DS_AVISYNTH_INCLUDE_DIR})
 endif()
@@ -170,49 +171,54 @@ if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISY
   )
 
   add_test(
-    NAME avs_testpattern_info
+    NAME avs_c_testpattern_info
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --info
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"
+      --backend c
   )
 
   add_test(
-    NAME avs_video_invert_process
+    NAME avs_c_video_invert_process
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
+      --backend c
       --frame
       0
   )
 
   add_test(
-    NAME avs_video_transpose_roundtrip
+    NAME avs_c_video_transpose_roundtrip
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
+      --backend c
       --frame
       0
   )
 
   add_test(
-    NAME avs_acceptance_temporal_average3
+    NAME avs_c_acceptance_temporal_average3
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
+      --backend c
       --frame
       0
   )
 
   add_test(
-    NAME avs_acceptance_copy_stamp
+    NAME avs_c_acceptance_copy_stamp
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --video
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_copy_stamp.avs"
+      --backend c
       --frame
       1
       --expect-y8-sum
@@ -220,12 +226,81 @@ if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISY
   )
 
   add_test(
-    NAME avs_audio_gain_info
+    NAME avs_c_audio_gain_info
     COMMAND
       $<TARGET_FILE:dualsynth_avisynth_runner>
       --audio
       "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
+      --backend c
       --samples
       4800
   )
+
+  if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    add_test(
+      NAME avs_cpp_testpattern_info
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --info
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"
+        --backend cpp
+    )
+
+    add_test(
+      NAME avs_cpp_video_invert_process
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --video
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_invert_process.avs"
+        --backend cpp
+        --frame
+        0
+    )
+
+    add_test(
+      NAME avs_cpp_video_transpose_roundtrip
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --video
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/video_transpose_roundtrip.avs"
+        --backend cpp
+        --frame
+        0
+    )
+
+    add_test(
+      NAME avs_cpp_acceptance_temporal_average3
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --video
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_temporal_average3.avs"
+        --backend cpp
+        --frame
+        0
+    )
+
+    add_test(
+      NAME avs_cpp_acceptance_copy_stamp
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --video
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/acceptance_copy_stamp.avs"
+        --backend cpp
+        --frame
+        1
+        --expect-y8-sum
+        318
+    )
+
+    add_test(
+      NAME avs_cpp_audio_gain_info
+      COMMAND
+        $<TARGET_FILE:dualsynth_avisynth_runner>
+        --audio
+        "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/audio_gain_info.avs"
+        --backend cpp
+        --samples
+        4800
+    )
+  endif()
 endif()

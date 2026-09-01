@@ -1,7 +1,9 @@
 #pragma once
 
 #include <avisynth.h>
+#include <avisynth_c.h>
 
+#include <dualsynth/avisynth/c/video_bridge.hpp>
 #include <dualsynth/avisynth/global_lock.hpp>
 #include <dualsynth/avisynth/host_variable.hpp>
 #include <dualsynth/format.hpp>

@@ -24,11 +24,11 @@ struct FakeAvisynthSource {
   std::map<int, std::vector<std::string>> string_arrays;
 
   bool defined(int index) const {
-    return scalars.contains(index) ||
-      int_arrays.contains(index) ||
-      float_arrays.contains(index) ||
-      bool_arrays.contains(index) ||
-      string_arrays.contains(index);
+    return scalars.count(index) > 0 ||
+      int_arrays.count(index) > 0 ||
+      float_arrays.count(index) > 0 ||
+      bool_arrays.count(index) > 0 ||
+      string_arrays.count(index) > 0;
   }
 
   std::int64_t as_int(int index) const {
@@ -182,18 +182,14 @@ TEST_CASE("AviSynth parameter reader converts positional host arguments using de
       ds::ParamSpec{"vs_only", ds::ParamType::Integer, ds::ParamValue{0}, false, false, true, false}
     }
   };
-  FakeAvisynthSource source{
-    .scalars = {
-      {1, 2.5},
-      {2, std::string{"0, 1"}},
-      {3, true}
-    },
-    .int_arrays = {
-      {4, std::vector<std::int64_t>{0, 2}}
-    },
-    .float_arrays = {},
-    .bool_arrays = {},
-    .string_arrays = {}
+  FakeAvisynthSource source;
+  source.scalars = {
+    {1, 2.5},
+    {2, std::string{"0, 1"}},
+    {3, true}
+  };
+  source.int_arrays = {
+    {4, std::vector<std::int64_t>{0, 2}}
   };
 
   const auto result = ds::avisynth::read_params_from_source(source, descriptor);
