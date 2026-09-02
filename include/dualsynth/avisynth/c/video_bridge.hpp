@@ -37,7 +37,17 @@
 #include <dlfcn.h>
 #endif
 
+namespace ds::avisynth {
+enum class MtMode {
+  NiceFilter,
+  MultiInstance,
+  Serialized
+};
+}
+
 namespace ds::avisynth::c {
+
+using ds::avisynth::MtMode;
 
 struct CApi {
   using avs_add_function_fn = int(AVSC_CC*)(AVS_ScriptEnvironment*, const char*, const char*, AVS_ApplyFunc, void*);
@@ -227,13 +237,7 @@ constexpr OutputOrigin filter_output_origin() {
   }
 }
 
-enum class MtMode {
-  NiceFilter,
-  MultiInstance,
-  Serialized
-};
-
-inline int host_mt_mode(MtMode mode) {
+inline int c_host_mt_mode(MtMode mode) {
   switch (mode) {
   case MtMode::NiceFilter:
     return AVS_MT_NICE_FILTER;
@@ -243,6 +247,10 @@ inline int host_mt_mode(MtMode mode) {
     return AVS_MT_SERIALIZED;
   }
   return AVS_MT_SERIALIZED;
+}
+
+inline int host_mt_mode(MtMode mode) {
+  return c_host_mt_mode(mode);
 }
 
 template <class Bridge, class = void>
@@ -287,6 +295,19 @@ struct bridge_has_descriptor<
   Bridge,
   std::void_t<decltype(Bridge::descriptor())>
 > : std::true_type {};
+
+template <class Bridge>
+inline const char* bridge_avs_signature() {
+  if constexpr (bridge_has_descriptor<Bridge>::value) {
+    static const std::string sig = [] {
+      auto res = make_avisynth_signature(Bridge::descriptor());
+      return res.has_value() ? res.value() : std::string(Bridge::avs_signature);
+    }();
+    return sig.c_str();
+  } else {
+    return Bridge::avs_signature;
+  }
+}
 
 inline int plane_id(VideoFormat format, int plane) {
   if (format.color_family == ColorFamily::Rgb) {
@@ -1083,7 +1104,7 @@ int AVSC_CC c_filter_set_cache_hints(AVS_FilterInfo* fi, int cachehints, int fra
   }
   int default_response = 0;
   if (cachehints == AVS_CACHE_GET_MTMODE) {
-    default_response = host_mt_mode(holder->mt_mode);
+    default_response = c_host_mt_mode(holder->mt_mode);
   }
   return cache_hints_video_filter<Filter>(
     cachehints,
@@ -1272,7 +1293,7 @@ inline void register_video_filter(AVS_ScriptEnvironment* env) {
     api.add_function(
       env,
       Bridge::avs_name,
-      Bridge::avs_signature,
+      bridge_avs_signature<Bridge>(),
       create_video_filter_bridge<Bridge>,
       nullptr
     );

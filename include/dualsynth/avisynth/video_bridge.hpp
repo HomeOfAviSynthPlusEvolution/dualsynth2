@@ -40,12 +40,6 @@ constexpr OutputOrigin filter_output_origin() {
   }
 }
 
-enum class MtMode {
-  NiceFilter,
-  MultiInstance,
-  Serialized
-};
-
 inline constexpr int filter_mt_mode_interface_version = 8;
 inline constexpr bool compiled_with_filter_mt_mode =
   AVISYNTH_INTERFACE_VERSION >= filter_mt_mode_interface_version;
@@ -1048,6 +1042,24 @@ inline Result<ParamValues> read_params(
   const FilterDescriptor& descriptor
 ) {
   return read_params_from_source(AvisynthValueParamSource{args}, descriptor);
+}
+
+template <class Bridge>
+inline const char* bridge_avs_signature() {
+  return ds::avisynth::c::bridge_avs_signature<Bridge>();
+}
+
+template <class Bridge>
+inline void register_video_filter(IScriptEnvironment* env) {
+  env->AddFunction(
+    Bridge::avs_name,
+    bridge_avs_signature<Bridge>(),
+    [](AVSValue args, void*, IScriptEnvironment* e) -> AVSValue {
+      return create_video_filter_bridge<Bridge>(args, e);
+    },
+    nullptr
+  );
+  set_video_filter_mt_mode<Bridge>(env);
 }
 
 } // namespace ds::avisynth

@@ -111,3 +111,32 @@ TEST_CASE("AviSynth C bridge output origin matching", "[avisynth_c]") {
     ds::OutputOrigin::fresh(), output, ds::Span<const ds::VideoInputInfo>(inputs.data(), inputs.size())
   ));
 }
+
+namespace {
+struct CustomFilterCore {
+  static constexpr const char* name = "CustomFilter";
+  static constexpr int input_count = 1;
+};
+
+struct CustomFilterBridge : ds::SingleInputVideoBridgeDefaults<CustomFilterCore> {
+  static constexpr const char* vs_name = "CustomFilter";
+  static constexpr const char* avs_name = "DSCustomFilter";
+  static constexpr ds::avisynth::MtMode avs_mt_mode = ds::avisynth::MtMode::MultiInstance;
+
+  static ds::FilterDescriptor descriptor() {
+    return ds::FilterDescriptor{
+      "DSCustomFilter",
+      std::vector<ds::ParamSpec>{
+        ds::ParamSpec{"clip", ds::ParamType::Clip, ds::ParamValue{}, true},
+        ds::ParamSpec{"range", ds::ParamType::Integer, ds::ParamValue{15}, false},
+        ds::ParamSpec{"y", ds::ParamType::Integer, ds::ParamValue{64}, false}
+      }
+    };
+  }
+};
+} // namespace
+
+TEST_CASE("AviSynth C bridge generates dynamic signature from descriptor and matches ds::avisynth::MtMode", "[avisynth_c]") {
+  CHECK(ds::avisynth::c::bridge_mt_mode<CustomFilterBridge>() == ds::avisynth::MtMode::MultiInstance);
+  CHECK(std::string(ds::avisynth::c::bridge_avs_signature<CustomFilterBridge>()) == "c[range]i[y]i");
+}
