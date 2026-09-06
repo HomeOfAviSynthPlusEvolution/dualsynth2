@@ -19,6 +19,19 @@ Tests and acceptance plugins are enabled by default. They can be disabled with:
 cmake -S . -B build -DDS_BUILD_TESTS=OFF -DDS_BUILD_ACCEPTANCE_PLUGIN=OFF
 ```
 
+Both hosts are enabled by default. For a VapourSynth-only build (for example,
+when packaging a downstream plugin for PyPI), use:
+
+```sh
+cmake -S . -B build -DDS_ENABLE_AVISYNTH=OFF
+```
+
+Use `-DDS_ENABLE_VAPOURSYNTH=OFF` for an AviSynth-only build. Disabling both
+hosts is a configuration error. A disabled host's SDK is not searched for or
+downloaded, and its acceptance entry, host-specific tests, and tools are omitted,
+even when an SDK path remains cached from an earlier configuration.
+Shared C++ APIs and signature helpers remain available in all builds.
+
 ## Use
 
 Plugin projects can consume DualSynth with CMake `FetchContent`:
@@ -38,6 +51,23 @@ FetchContent_MakeAvailable(dualsynth2)
 
 target_link_libraries(my_plugin PRIVATE DualSynth::dualsynth)
 ```
+
+These options control DualSynth's own targets. Downstream plugins must also
+select their entry sources using the same options after adding DualSynth:
+
+```cmake
+if(DS_ENABLE_VAPOURSYNTH)
+  target_sources(my_plugin PRIVATE src/vapoursynth_entry.cpp)
+  # Add the VapourSynth SDK include directory here.
+endif()
+if(DS_ENABLE_AVISYNTH)
+  target_sources(my_plugin PRIVATE src/avisynth_entry.cpp)
+  # Add the AviSynth SDK include directory here.
+endif()
+```
+
+Keep downstream SDK discovery and download steps inside the corresponding
+conditions as well. These are CMake options, not C++ preprocessor definitions.
 
 On MSVC, DualSynth does not force `/MD` or `/MT`. Use the same runtime library
 for the plugin and DualSynth, either by setting `CMAKE_MSVC_RUNTIME_LIBRARY` in

@@ -1,11 +1,14 @@
 set(dualsynth_acceptance_sources)
+set(dualsynth_acceptance_include_dirs src)
 
-if(DS_VAPOURSYNTH_INCLUDE_DIR)
+if(DS_ENABLE_VAPOURSYNTH AND DS_VAPOURSYNTH_INCLUDE_DIR)
   list(APPEND dualsynth_acceptance_sources src/vapoursynth_entry.cpp)
+  list(APPEND dualsynth_acceptance_include_dirs ${DS_VAPOURSYNTH_INCLUDE_DIR})
 endif()
 
-if(DS_AVISYNTH_INCLUDE_DIR)
+if(DS_ENABLE_AVISYNTH AND DS_AVISYNTH_INCLUDE_DIR)
   list(APPEND dualsynth_acceptance_sources src/avisynth_entry.cpp)
+  list(APPEND dualsynth_acceptance_include_dirs ${DS_AVISYNTH_INCLUDE_DIR})
 endif()
 
 if(NOT dualsynth_acceptance_sources)
@@ -19,9 +22,7 @@ add_library(dualsynth_acceptance MODULE
 target_link_libraries(dualsynth_acceptance PRIVATE DualSynth::dualsynth)
 target_include_directories(dualsynth_acceptance
   PRIVATE
-    src
-    ${DS_VAPOURSYNTH_INCLUDE_DIR}
-    ${DS_AVISYNTH_INCLUDE_DIR}
+    ${dualsynth_acceptance_include_dirs}
 )
 target_compile_features(dualsynth_acceptance PRIVATE cxx_std_17)
 ds_apply_compiler_options(dualsynth_acceptance)

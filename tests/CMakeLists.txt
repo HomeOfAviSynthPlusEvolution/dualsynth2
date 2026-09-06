@@ -16,7 +16,6 @@ add_executable(dualsynth_unit_tests
   unit/test_span2d.cpp
   unit/test_video_bridge.cpp
   unit/test_global_lock.cpp
-  unit/test_vapoursynth_video_bridge.cpp
   unit/test_acceptance_copy_stamp.cpp
   unit/test_acceptance_temporal_average3.cpp
   unit/test_reference_audio_filters.cpp
@@ -36,11 +35,12 @@ target_include_directories(dualsynth_unit_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/../plugins/acceptance/src
 )
 
-if(DS_VAPOURSYNTH_INCLUDE_DIR)
+if(DS_ENABLE_VAPOURSYNTH AND DS_VAPOURSYNTH_INCLUDE_DIR)
+  target_sources(dualsynth_unit_tests PRIVATE unit/test_vapoursynth_video_bridge.cpp)
   target_include_directories(dualsynth_unit_tests PRIVATE ${DS_VAPOURSYNTH_INCLUDE_DIR})
 endif()
 
-if(DS_AVISYNTH_INCLUDE_DIR)
+if(DS_ENABLE_AVISYNTH AND DS_AVISYNTH_INCLUDE_DIR)
   target_sources(dualsynth_unit_tests
     PRIVATE
       unit/test_avisynth_global_lock.cpp
@@ -53,9 +53,11 @@ endif()
 include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
 
-find_program(DS_VSPIPE_EXECUTABLE vspipe)
+if(DS_ENABLE_VAPOURSYNTH)
+  find_program(DS_VSPIPE_EXECUTABLE vspipe)
+endif()
 
-if(DS_AVISYNTH_INCLUDE_DIR)
+if(DS_ENABLE_AVISYNTH AND DS_AVISYNTH_INCLUDE_DIR)
   add_executable(dualsynth_avisynth_runner
     tools/avisynth_runner.cpp
   )
@@ -71,7 +73,7 @@ if(DS_AVISYNTH_INCLUDE_DIR)
   )
 endif()
 
-if(TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLUDE_DIR)
+if(DS_ENABLE_VAPOURSYNTH AND TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLUDE_DIR)
   add_test(
     NAME vs_testpattern_info
     COMMAND
@@ -137,7 +139,7 @@ if(TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLU
   )
 endif()
 
-if(TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISYNTH_INCLUDE_DIR)
+if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISYNTH_INCLUDE_DIR)
   set(DS_AVISYNTH_TEST_SCRIPT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration/avisynth")
 
   file(GENERATE

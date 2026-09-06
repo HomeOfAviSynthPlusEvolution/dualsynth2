@@ -8,6 +8,13 @@ project(DualSynth
 
 option(DS_BUILD_TESTS "Build DualSynth tests" ON)
 option(DS_BUILD_ACCEPTANCE_PLUGIN "Build DualSynth acceptance plugin" ON)
+option(DS_ENABLE_AVISYNTH "Enable AviSynth host builds" ON)
+option(DS_ENABLE_VAPOURSYNTH "Enable VapourSynth host builds" ON)
+
+if(NOT DS_ENABLE_AVISYNTH AND NOT DS_ENABLE_VAPOURSYNTH)
+  message(FATAL_ERROR "DualSynth requires at least one host to be enabled")
+endif()
+
 option(
   DS_BUILD_AVISYNTH_POSIX_ACCEPTANCE_PLUGIN
   "Build the AviSynth+ acceptance plugin entry on POSIX hosts"
@@ -60,7 +67,7 @@ target_include_directories(dualsynth
 )
 ds_apply_compiler_options(dualsynth)
 
-if(DS_BUILD_ACCEPTANCE_PLUGIN)
+if(DS_ENABLE_VAPOURSYNTH AND (DS_BUILD_ACCEPTANCE_PLUGIN OR DS_BUILD_TESTS))
   set(DS_VAPOURSYNTH_SDK "" CACHE PATH "Optional path to a VapourSynth SDK")
   set(_ds_vapoursynth_include_hints)
   if(DS_VAPOURSYNTH_SDK)
@@ -115,55 +122,57 @@ if(DS_BUILD_ACCEPTANCE_PLUGIN)
   endif()
 endif()
 
-set(DS_AVISYNTH_SDK "" CACHE PATH "Optional path to an AviSynth+ SDK")
-set(_ds_avisynth_include_hints)
-if(DS_AVISYNTH_SDK)
-  list(APPEND _ds_avisynth_include_hints
-    "${DS_AVISYNTH_SDK}/include"
-    "${DS_AVISYNTH_SDK}/avs_core/include"
-    "${DS_AVISYNTH_SDK}"
-  )
-endif()
-if(DEFINED ENV{AVISYNTH_SDK})
-  list(APPEND _ds_avisynth_include_hints
-    "$ENV{AVISYNTH_SDK}/include"
-    "$ENV{AVISYNTH_SDK}/avs_core/include"
-    "$ENV{AVISYNTH_SDK}"
-  )
-endif()
-find_path(DS_AVISYNTH_INCLUDE_DIR
-  NAMES avisynth_c.h avisynth.h
-  HINTS ${_ds_avisynth_include_hints}
-)
-unset(_ds_avisynth_include_hints)
-
-set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
-set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "enabled")
-
-if(DS_BUILD_ACCEPTANCE_PLUGIN AND NOT DS_AVISYNTH_INCLUDE_DIR)
-  FetchContent_Declare(
-    AviSynthPlus
-    URL https://github.com/AviSynth/AviSynthPlus/archive/refs/heads/master.zip
-  )
-  FetchContent_GetProperties(AviSynthPlus)
-  if(NOT avisynthplus_POPULATED)
-    if(POLICY CMP0169)
-      cmake_policy(PUSH)
-      cmake_policy(SET CMP0169 OLD)
-    endif()
-    FetchContent_Populate(AviSynthPlus)
-    if(POLICY CMP0169)
-      cmake_policy(POP)
-    endif()
+if(DS_ENABLE_AVISYNTH AND (DS_BUILD_ACCEPTANCE_PLUGIN OR DS_BUILD_TESTS))
+  set(DS_AVISYNTH_SDK "" CACHE PATH "Optional path to an AviSynth+ SDK")
+  set(_ds_avisynth_include_hints)
+  if(DS_AVISYNTH_SDK)
+    list(APPEND _ds_avisynth_include_hints
+      "${DS_AVISYNTH_SDK}/include"
+      "${DS_AVISYNTH_SDK}/avs_core/include"
+      "${DS_AVISYNTH_SDK}"
+    )
   endif()
-  set(DS_AVISYNTH_INCLUDE_DIR
-    "${avisynthplus_SOURCE_DIR}/avs_core/include"
-    CACHE PATH "Path to a directory containing avisynth.h and avisynth_c.h"
-    FORCE
+  if(DEFINED ENV{AVISYNTH_SDK})
+    list(APPEND _ds_avisynth_include_hints
+      "$ENV{AVISYNTH_SDK}/include"
+      "$ENV{AVISYNTH_SDK}/avs_core/include"
+      "$ENV{AVISYNTH_SDK}"
+    )
+  endif()
+  find_path(DS_AVISYNTH_INCLUDE_DIR
+    NAMES avisynth_c.h avisynth.h
+    HINTS ${_ds_avisynth_include_hints}
   )
+  unset(_ds_avisynth_include_hints)
+
+  set(DS_CAN_BUILD_AVISYNTH_ACCEPTANCE_PLUGIN ON)
+  set(DS_AVISYNTH_ACCEPTANCE_PLATFORM_STATUS "enabled")
+
+  if(DS_BUILD_ACCEPTANCE_PLUGIN AND NOT DS_AVISYNTH_INCLUDE_DIR)
+    FetchContent_Declare(
+      AviSynthPlus
+      URL https://github.com/AviSynth/AviSynthPlus/archive/refs/heads/master.zip
+    )
+    FetchContent_GetProperties(AviSynthPlus)
+    if(NOT avisynthplus_POPULATED)
+      if(POLICY CMP0169)
+        cmake_policy(PUSH)
+        cmake_policy(SET CMP0169 OLD)
+      endif()
+      FetchContent_Populate(AviSynthPlus)
+      if(POLICY CMP0169)
+        cmake_policy(POP)
+      endif()
+    endif()
+    set(DS_AVISYNTH_INCLUDE_DIR
+      "${avisynthplus_SOURCE_DIR}/avs_core/include"
+      CACHE PATH "Path to a directory containing avisynth.h and avisynth_c.h"
+      FORCE
+    )
+  endif()
 endif()
 
-if(DS_BUILD_ACCEPTANCE_PLUGIN AND (DS_VAPOURSYNTH_INCLUDE_DIR OR DS_AVISYNTH_INCLUDE_DIR))
+if(DS_BUILD_ACCEPTANCE_PLUGIN)
   add_subdirectory(plugins/acceptance)
 endif()
 
