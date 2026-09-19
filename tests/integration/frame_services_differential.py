@@ -7,7 +7,7 @@ import tempfile
 
 def run(command):
     result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-    if result.returncode:
+    if result.returncode or "Core freed but" in result.stderr:
         raise RuntimeError(f"{command!r}\n{result.stdout}\n{result.stderr}")
 
 

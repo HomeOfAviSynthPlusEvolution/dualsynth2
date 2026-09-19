@@ -85,6 +85,8 @@ if(DS_ENABLE_VAPOURSYNTH AND TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABL
   add_test(NAME vs_frame_services COMMAND ${DS_VSPIPE_EXECUTABLE}
     --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/frame_services.vpy --)
+  set_tests_properties(vs_frame_services PROPERTIES PROCESSORS 4
+    FAIL_REGULAR_EXPRESSION "Core freed but")
   add_test(
     NAME vs_testpattern_info
     COMMAND

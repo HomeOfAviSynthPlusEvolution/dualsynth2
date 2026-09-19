@@ -37,9 +37,15 @@ for fmt in formats:
             assert frame.width == 7 and frame.height == 3 and frame.format.id == vs.GRAY16
             assert frame.props["DS_Tag"] == 42
             assert list(struct.unpack("21H", bytes(frame[0]))) == list(range(1000, 1021))
+            frame.close()
     outputs.append(out)
 
 # Also exercise asynchronous scheduling with several outstanding requests.
 for f in outputs[0].frames(prefetch=4):
     assert "DS_Frames" in f.props
+    f.close()
 outputs[0].set_output()
+# Release test-owned nodes before the script environment tears down the core.
+del src, pair, out, outputs, f, ref, sibling, frame, aux
+import gc
+gc.collect()
