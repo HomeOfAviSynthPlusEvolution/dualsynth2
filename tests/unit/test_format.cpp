@@ -78,3 +78,14 @@ TEST_CASE("Audio format stores sample type and channel count") {
   REQUIRE(format.sample_rate == 48000);
   REQUIRE(format.channels == 2);
 }
+
+TEST_CASE("All integer video depths retain their logical precision") {
+  for (int depth = 8; depth <= 16; ++depth) {
+    const auto format = ds::sample_format_from_depth(false,depth);
+    REQUIRE(format.has_value());
+    CHECK(ds::bits_per_sample(format.value()) == depth);
+    CHECK(ds::bytes_per_sample(format.value()) == (depth == 8 ? 1 : 2));
+  }
+  CHECK_FALSE(ds::sample_format_from_depth(false,7).has_value());
+  CHECK_FALSE(ds::sample_format_from_depth(false,17).has_value());
+}

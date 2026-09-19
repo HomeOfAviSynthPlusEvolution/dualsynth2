@@ -21,6 +21,8 @@ struct FrameTraits {
   Frame get_frame(const Map* m, const char* k, int i, int* e) const { return const_cast<Frame>(api->prop_get_frame(env,m,k,i,e)); }
   Frame allocate(VideoFormat fmt, int w, int h, const Frame& props) const {
     auto vi = make_video_info(VideoOutputInfo{w,h,1,fmt,{1,1}});
+    if (vi.pixel_type == AVS_CS_UNKNOWN)
+      throw std::invalid_argument("DualSynth: AviSynth does not support the requested auxiliary format/depth");
     // Some C runtimes wrap a null prop_src as a non-null PVideoFrame pointer.
     // Use the property-free allocator when there is no source frame.
     return props ? api->new_video_frame_p(env,&vi,props) : api->new_video_frame_a(env,&vi,AVS_FRAME_ALIGN);

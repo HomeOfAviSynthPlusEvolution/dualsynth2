@@ -392,6 +392,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? AVS_CS_YUVA444P16 : AVS_CS_YUV444P16;
     case SampleFormat::Float32:
       return has_alpha ? AVS_CS_YUVA444PS : AVS_CS_YUV444PS;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 
@@ -409,6 +411,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? AVS_CS_YUVA422P16 : AVS_CS_YUV422P16;
     case SampleFormat::Float32:
       return has_alpha ? AVS_CS_YUVA422PS : AVS_CS_YUV422PS;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 
@@ -426,6 +430,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? AVS_CS_YUVA420P16 : AVS_CS_YUV420P16;
     case SampleFormat::Float32:
       return has_alpha ? AVS_CS_YUVA420PS : AVS_CS_YUV420PS;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 
@@ -447,6 +453,8 @@ inline int pixel_type(VideoFormat format) {
       return AVS_CS_Y16;
     case SampleFormat::Float32:
       return AVS_CS_Y32;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 
@@ -464,6 +472,8 @@ inline int pixel_type(VideoFormat format) {
       return AVS_CS_RGBP16;
     case SampleFormat::Float32:
       return AVS_CS_RGBPS;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 
@@ -481,6 +491,8 @@ inline int pixel_type(VideoFormat format) {
       return AVS_CS_RGBAP16;
     case SampleFormat::Float32:
       return AVS_CS_RGBAPS;
+    default:
+      return AVS_CS_UNKNOWN;
     }
   }
 

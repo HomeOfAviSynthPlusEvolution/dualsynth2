@@ -209,6 +209,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? VideoInfo::CS_YUVA444P16 : VideoInfo::CS_YUV444P16;
     case SampleFormat::Float32:
       return has_alpha ? VideoInfo::CS_YUVA444PS : VideoInfo::CS_YUV444PS;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -226,6 +228,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? VideoInfo::CS_YUVA422P16 : VideoInfo::CS_YUV422P16;
     case SampleFormat::Float32:
       return has_alpha ? VideoInfo::CS_YUVA422PS : VideoInfo::CS_YUV422PS;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -243,6 +247,8 @@ inline int yuv_pixel_type(VideoFormat format) {
       return has_alpha ? VideoInfo::CS_YUVA420P16 : VideoInfo::CS_YUV420P16;
     case SampleFormat::Float32:
       return has_alpha ? VideoInfo::CS_YUVA420PS : VideoInfo::CS_YUV420PS;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -264,6 +270,8 @@ inline int pixel_type(VideoFormat format) {
       return VideoInfo::CS_Y16;
     case SampleFormat::Float32:
       return VideoInfo::CS_Y32;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -281,6 +289,8 @@ inline int pixel_type(VideoFormat format) {
       return VideoInfo::CS_RGBP16;
     case SampleFormat::Float32:
       return VideoInfo::CS_RGBPS;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 
@@ -298,6 +308,8 @@ inline int pixel_type(VideoFormat format) {
       return VideoInfo::CS_RGBAP16;
     case SampleFormat::Float32:
       return VideoInfo::CS_RGBAPS;
+    default:
+      return VideoInfo::CS_UNKNOWN;
     }
   }
 

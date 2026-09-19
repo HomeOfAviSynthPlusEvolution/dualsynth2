@@ -18,6 +18,11 @@ enum class SampleFormat {
   UInt14,
   UInt16,
   Float32,
+  // Append to preserve existing enum values in client code.
+  UInt9,
+  UInt11,
+  UInt13,
+  UInt15,
 };
 
 struct VideoFormat {

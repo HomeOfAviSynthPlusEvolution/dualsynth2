@@ -27,18 +27,26 @@ Result<SampleFormat> sample_format_from_depth(bool floating_point, int bits_per_
   switch (bits_per_sample) {
   case 8:
     return Result<SampleFormat>::success(SampleFormat::UInt8);
+  case 9:
+    return Result<SampleFormat>::success(SampleFormat::UInt9);
   case 10:
     return Result<SampleFormat>::success(SampleFormat::UInt10);
+  case 11:
+    return Result<SampleFormat>::success(SampleFormat::UInt11);
   case 12:
     return Result<SampleFormat>::success(SampleFormat::UInt12);
+  case 13:
+    return Result<SampleFormat>::success(SampleFormat::UInt13);
   case 14:
     return Result<SampleFormat>::success(SampleFormat::UInt14);
+  case 15:
+    return Result<SampleFormat>::success(SampleFormat::UInt15);
   case 16:
     return Result<SampleFormat>::success(SampleFormat::UInt16);
   default:
     return Result<SampleFormat>::failure({
       ErrorCode::UnsupportedFormat,
-      "only 8-bit, 16-bit, and 32-bit float video samples are supported"
+      "only 8 through 16-bit integer and 32-bit float video samples are supported"
     });
   }
 }
@@ -73,33 +81,32 @@ Result<VideoFormat> make_video_format(
 
 int bytes_per_sample(SampleFormat sample_format) {
   switch (sample_format) {
-  case SampleFormat::UInt8:
-    return 1;
+  case SampleFormat::UInt8: return 1;
+  case SampleFormat::UInt9:
   case SampleFormat::UInt10:
+  case SampleFormat::UInt11:
   case SampleFormat::UInt12:
+  case SampleFormat::UInt13:
   case SampleFormat::UInt14:
-  case SampleFormat::UInt16:
-    return 2;
-  case SampleFormat::Float32:
-    return 4;
+  case SampleFormat::UInt15:
+  case SampleFormat::UInt16: return 2;
+  case SampleFormat::Float32: return 4;
   }
   return 0;
 }
 
 int bits_per_sample(SampleFormat sample_format) {
   switch (sample_format) {
-  case SampleFormat::UInt8:
-    return 8;
-  case SampleFormat::UInt10:
-    return 10;
-  case SampleFormat::UInt12:
-    return 12;
-  case SampleFormat::UInt14:
-    return 14;
-  case SampleFormat::UInt16:
-    return 16;
-  case SampleFormat::Float32:
-    return 32;
+  case SampleFormat::UInt8: return 8;
+  case SampleFormat::UInt9: return 9;
+  case SampleFormat::UInt10: return 10;
+  case SampleFormat::UInt11: return 11;
+  case SampleFormat::UInt12: return 12;
+  case SampleFormat::UInt13: return 13;
+  case SampleFormat::UInt14: return 14;
+  case SampleFormat::UInt15: return 15;
+  case SampleFormat::UInt16: return 16;
+  case SampleFormat::Float32: return 32;
   }
   return 0;
 }

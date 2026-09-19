@@ -11,7 +11,9 @@ def stamp(n, f):
     return out
 
 outputs = []
-for fmt in (vs.GRAY8, vs.GRAY16, vs.GRAYS, vs.YUV420P10, vs.RGBS):
+formats = [vs.GRAY8, vs.GRAY16, vs.GRAYS, vs.YUV420P10, vs.RGBS]
+formats += [core.query_video_format(vs.GRAY, vs.INTEGER, bits, 0, 0).id for bits in (9, 11, 13, 15)]
+for fmt in formats:
     src = core.std.BlankClip(width=16, height=8, length=4, format=fmt)
     src = core.std.ModifyFrame(src, src, stamp)
     pair = core.dsref.FrameServicesPair(clips=[src, src], extra=src)

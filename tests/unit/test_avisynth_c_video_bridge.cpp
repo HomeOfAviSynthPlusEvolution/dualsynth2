@@ -200,3 +200,15 @@ TEST_CASE("AviSynth C bridge generates dynamic signature from descriptor and mat
   CHECK(ds::avisynth::c::bridge_mt_mode<CustomFilterBridge>() == ds::avisynth::MtMode::MultiInstance);
   CHECK(std::string(ds::avisynth::c::bridge_avs_signature<CustomFilterBridge>()) == "c[range]i[y]i");
 }
+
+TEST_CASE("ds::avisynth::c rejects native integer depths unavailable in AviSynth") {
+  for (int depth : {9,11,13,15}) {
+    const auto sample = ds::sample_format_from_depth(false,depth).value();
+    for (auto family : {ds::ColorFamily::Gray,ds::ColorFamily::Yuv,ds::ColorFamily::Rgb}) {
+      ds::VideoFormat format{family,sample,family == ds::ColorFamily::Gray ? 1 : 3,0,0};
+      CHECK(ds::avisynth::c::pixel_type(format) == AVS_CS_UNKNOWN);
+      ds::avisynth::c::FrameTraits traits{};
+      CHECK_THROWS_AS(traits.allocate(format,16,8,{}),std::invalid_argument);
+    }
+  }
+}

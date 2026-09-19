@@ -20,6 +20,8 @@ struct FrameTraits {
   Frame get_frame(const Map* m, const char* k, int i, int* e) const { return env->propGetFrame(m,k,i,e); }
   Frame allocate(VideoFormat fmt, int w, int h, const Frame& props) const {
     auto vi = make_video_info(VideoOutputInfo{w,h,1,fmt,{1,1}});
+    if (vi.pixel_type == VideoInfo::CS_UNKNOWN)
+      throw std::invalid_argument("DualSynth: AviSynth does not support the requested auxiliary format/depth");
     return env->NewVideoFrameP(vi, props ? &props : nullptr);
   }
   int num_keys(const Map* m) const { return env->propNumKeys(m); }

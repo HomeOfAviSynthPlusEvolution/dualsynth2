@@ -347,3 +347,15 @@ TEST_CASE("AviSynth host variable adapter accepts SetVar update return value") {
   REQUIRE(env.set_calls == 1);
   REQUIRE(env.set_name == "ThirdPartyReady");
 }
+
+TEST_CASE("ds::avisynth rejects native integer depths unavailable in AviSynth") {
+  for (int depth : {9,11,13,15}) {
+    const auto sample = ds::sample_format_from_depth(false,depth).value();
+    for (auto family : {ds::ColorFamily::Gray,ds::ColorFamily::Yuv,ds::ColorFamily::Rgb}) {
+      ds::VideoFormat format{family,sample,family == ds::ColorFamily::Gray ? 1 : 3,0,0};
+      CHECK(ds::avisynth::pixel_type(format) == VideoInfo::CS_UNKNOWN);
+      ds::avisynth::FrameTraits traits{};
+      CHECK_THROWS_AS(traits.allocate(format,16,8,{}),std::invalid_argument);
+    }
+  }
+}
