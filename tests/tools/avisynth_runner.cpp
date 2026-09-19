@@ -524,6 +524,7 @@ void run_with_cpp_environment(const Options& options, const DynamicLibrary& runt
                   << " samples=" << vi.num_audio_samples;
       }
       std::cout << '\n';
+      clip = nullptr;
       env->DeleteScriptEnvironment();
       AVS_linkage = nullptr;
       return;
@@ -560,6 +561,8 @@ void run_with_cpp_environment(const Options& options, const DynamicLibrary& runt
           );
         }
       }
+      frame = nullptr;
+      clip = nullptr;
       env->DeleteScriptEnvironment();
       AVS_linkage = nullptr;
       std::cout << "video frame=" << options.frame << " ok\n";
@@ -577,6 +580,7 @@ void run_with_cpp_environment(const Options& options, const DynamicLibrary& runt
       const int64_t bytes = vi.BytesFromAudioSamples(samples);
       std::vector<std::byte> buffer(static_cast<std::size_t>(bytes));
       clip->GetAudio(buffer.data(), 0, samples, env);
+      clip = nullptr;
       env->DeleteScriptEnvironment();
       AVS_linkage = nullptr;
       std::cout << "audio samples=" << samples << " ok\n";
@@ -597,6 +601,10 @@ void run_with_cpp_environment(const Options&, const DynamicLibrary&) {
 } // namespace
 
 int main(int argc, char** argv) {
+#if defined(_WIN32)
+  // Automated tests must fail without displaying a blocking desktop dialog.
+  SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#endif
   try {
     const Options options = parse_args(argc, argv);
     DynamicLibrary runtime = load_avisynth_runtime(options);

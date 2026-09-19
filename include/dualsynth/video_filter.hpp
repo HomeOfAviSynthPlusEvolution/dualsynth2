@@ -3,6 +3,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/frame_services.hpp>
 #include <dualsynth/global_lock.hpp>
 #include <dualsynth/host_variable.hpp>
 #include <dualsynth/param.hpp>
@@ -54,12 +55,51 @@ struct VideoOutputInfo {
   FrameRate fps{};
 };
 
+// A negative input_count opts into descriptor-driven runtime clip groups.
+inline constexpr int dynamic_video_inputs = -1;
+template<class Filter, class T>
+using VideoInputStorage = std::conditional_t<Filter::input_count == dynamic_video_inputs,
+  std::vector<T>, std::array<T, (Filter::input_count < 0 ? 0 : Filter::input_count)>>;
+
+struct VideoInputGroup {
+  std::string name;
+  std::size_t first = 0;
+  std::size_t count = 0;
+};
+
+struct HostRequirements {
+  bool frame_services = false;
+  int avisynth_interface = 0;
+  int avisynth_bugfix = 0;
+};
+template<class Filter, class = void> struct FilterRequirements {
+  static constexpr HostRequirements value{};
+};
+template<class Filter> struct FilterRequirements<Filter, std::void_t<decltype(Filter::host_requirements)>> {
+  static constexpr HostRequirements value = Filter::host_requirements;
+};
+
+enum class VideoRequestPattern { General, StrictSpatial, NoFrameReuse };
+template<class Filter, class State, class = void> struct HasRequestPattern : std::false_type {};
+template<class Filter, class State> struct HasRequestPattern<Filter, State,
+  std::void_t<decltype(Filter::request_pattern(0, std::declval<const State&>()))>> : std::true_type {};
+template<class Filter, class State>
+VideoRequestPattern video_request_pattern(int input, const State& state) {
+  if constexpr (HasRequestPattern<Filter, State>::value) return Filter::request_pattern(input, state);
+  return VideoRequestPattern::General; // Safe default for temporal filters.
+}
+
+class VideoFrameProvider;
+
 struct VideoInitContext {
   Span<const VideoInputInfo> inputs;
   const ParamValues* params = nullptr;
   HostGlobalLockCallbacks host_global_locks{};
   HostVariableCallbacks host_variables{};
   HostKind host = HostKind::Unknown;
+  VideoFrameProvider* frames = nullptr; // Available during init; do not retain the provider.
+  FrameFactory* frame_factory = nullptr;
+  Span<const VideoInputGroup> input_groups{};
 
   Result<bool> set_host_var(std::string_view name, ParamValue value) const {
     return set_host_variable(host_variables, name, std::move(value));
@@ -109,6 +149,8 @@ struct OutputOrigin {
   OutputPixelPolicy pixels = OutputPixelPolicy::Fresh;
   int pixel_input_index = -1;
   int prop_input_index = -1;
+  int pixel_frame = -1; // -1 maps to the output frame number.
+  int prop_frame = -1;
 
   static constexpr OutputOrigin fresh(int prop_input = 0) noexcept {
     return OutputOrigin{OutputPixelPolicy::Fresh, -1, prop_input};
@@ -139,6 +181,7 @@ struct RequestedVideoFrame {
   int input_index;
   int frame_number;
   VideoFrameView frame;
+  FrameRef owner{}; // Populated by bridges using frame services; may outlive the provider.
 };
 
 struct VideoFrameRequest {
@@ -240,7 +283,7 @@ inline Result<VideoRequestResult> request_output_origin_frame(
         Error{ErrorCode::InvalidArgument, "DualSynth: output origin pixel input index is out of range"}
       );
     }
-    context.request_frame(origin.pixel_input_index, output_frame);
+    context.request_frame(origin.pixel_input_index, origin.pixel_frame < 0 ? output_frame : origin.pixel_frame);
   }
 
   if (origin.prop_input_index >= 0) {
@@ -249,7 +292,7 @@ inline Result<VideoRequestResult> request_output_origin_frame(
         Error{ErrorCode::InvalidArgument, "DualSynth: output origin prop input index is out of range"}
       );
     }
-    context.request_frame(origin.prop_input_index, output_frame);
+    context.request_frame(origin.prop_input_index, origin.prop_frame < 0 ? output_frame : origin.prop_frame);
   }
 
   return Result<VideoRequestResult>::success(VideoRequestResult{});
@@ -262,6 +305,7 @@ struct VideoProcessContext {
   VideoFrameProvider& frames;
   MutableVideoFrameView dst;
   void* filter_state = nullptr;
+  FrameFactory* frame_factory = nullptr;
 
   template <class State>
   State& state() const {
@@ -288,11 +332,11 @@ struct VideoCacheHintsContext {
 };
 
 template <class Filter>
-Result<std::array<VideoInputInfo, static_cast<std::size_t>(Filter::input_count)>>
+Result<VideoInputStorage<Filter, VideoInputInfo>>
 collect_video_input_infos(Span<const VideoInputInfo> inputs) {
   constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
-  if (inputs.size() != input_count) {
-    return Result<std::array<VideoInputInfo, input_count>>::failure(
+  if (Filter::input_count != dynamic_video_inputs && inputs.size() != input_count) {
+    return Result<VideoInputStorage<Filter, VideoInputInfo>>::failure(
       Error{
         ErrorCode::InvalidArgument,
         std::string(Filter::name) + " received the wrong number of video inputs"
@@ -300,11 +344,12 @@ collect_video_input_infos(Span<const VideoInputInfo> inputs) {
     );
   }
 
-  std::array<VideoInputInfo, input_count> collected{};
-  for (std::size_t i = 0; i < input_count; ++i) {
+  VideoInputStorage<Filter, VideoInputInfo> collected{};
+  if constexpr (Filter::input_count == dynamic_video_inputs) collected.resize(inputs.size());
+  for (std::size_t i = 0; i < inputs.size(); ++i) {
     collected[i] = inputs[i];
   }
-  return Result<std::array<VideoInputInfo, input_count>>::success(collected);
+  return Result<VideoInputStorage<Filter, VideoInputInfo>>::success(collected);
 }
 
 template <class Filter>
@@ -325,9 +370,12 @@ Result<VideoFilterInstance<Filter>> init_video_filter_instance(
   const ParamValues* params,
   HostGlobalLockCallbacks host_global_locks = {},
   HostVariableCallbacks host_variables = {},
-  HostKind host = HostKind::Unknown
+  HostKind host = HostKind::Unknown,
+  VideoFrameProvider* frames = nullptr,
+  FrameFactory* frame_factory = nullptr,
+  Span<const VideoInputGroup> input_groups = {}
 ) {
-  VideoInitContext context{inputs, params, host_global_locks, host_variables, host};
+  VideoInitContext context{inputs, params, host_global_locks, host_variables, host, frames, frame_factory, input_groups};
   if constexpr (VideoFilterStateTraits<Filter>::stateful) {
     auto initialized = Filter::init(context);
     if (!initialized.has_value()) {
@@ -402,9 +450,10 @@ Result<VideoProcessResult> process_video_filter(
   int output_frame,
   VideoFrameProvider& frames,
   MutableVideoFrameView dst,
-  VideoFilterState<Filter>* state = nullptr
+  VideoFilterState<Filter>* state = nullptr,
+  FrameFactory* factory = nullptr
 ) {
-  VideoProcessContext context{output_frame, frames, dst, state};
+  VideoProcessContext context{output_frame, frames, dst, state, factory};
   return Filter::process(context);
 }
 
@@ -413,9 +462,22 @@ Result<VideoProcessResult> process_video_filter(
   int output_frame,
   VideoFrameProvider& frames,
   MutableVideoFrameView dst,
-  VideoFilterState<Filter>& state
+  VideoFilterState<Filter>& state,
+  FrameFactory* factory = nullptr
 ) {
-  return process_video_filter<Filter>(output_frame, frames, dst, &state);
+  return process_video_filter<Filter>(output_frame, frames, dst, &state, factory);
+}
+
+template<class Filter, class = void> struct HasMappedOutputOrigin : std::false_type {};
+template<class Filter> struct HasMappedOutputOrigin<Filter,
+  std::void_t<decltype(Filter::output_origin_for(0, std::declval<const VideoFilterState<Filter>&>()))>> : std::true_type {};
+template<class Filter, class = void> struct HasStaticOutputOrigin : std::false_type {};
+template<class Filter> struct HasStaticOutputOrigin<Filter, std::void_t<decltype(Filter::output_origin)>> : std::true_type {};
+template<class Filter>
+OutputOrigin resolve_output_origin(int n, const VideoFilterState<Filter>& state) {
+  if constexpr (HasMappedOutputOrigin<Filter>::value) return Filter::output_origin_for(n, state);
+  else if constexpr (HasStaticOutputOrigin<Filter>::value) return Filter::output_origin;
+  else return OutputOrigin::fresh();
 }
 
 template <class Filter, class Context, class = void>

@@ -4,6 +4,7 @@
 
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/detail/native_frame.hpp>
 #include <dualsynth/param.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
@@ -136,13 +137,16 @@ inline MutableVideoFrameView make_mutable_video_frame_view(
   return MutableVideoFrameView{format, format.plane_count, planes};
 }
 
+#include <dualsynth/detail/vs_frame_traits.inc>
+
 template <class Bridge>
 struct VideoFilterData {
   using Filter = typename Bridge::Core;
   static constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
 
-  std::array<VSNode*, input_count> nodes{};
-  std::array<VideoInputInfo, input_count> input_infos{};
+  VideoInputStorage<Filter, VSNode*> nodes{};
+  VideoInputStorage<Filter, VideoInputInfo> input_infos{};
+  std::vector<VideoInputGroup> input_groups;
   VSVideoInfo video_info{};
   VideoFormat output_format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
   VideoFilterState<Filter> state{};
@@ -220,11 +224,11 @@ public:
     Span<const VideoFrameRequest> requests,
     Span<const VSFrame* const> frames,
     Span<const VideoInputInfo> input_infos,
-    const VSAPI* vsapi
+    const VSAPI* vsapi, VSCore* core = nullptr
   ) : requests_(requests),
       frames_(frames),
       input_infos_(input_infos),
-      vsapi_(vsapi) {}
+      vsapi_(vsapi), core_(core) {}
 
   Result<RequestedVideoFrame> get(int input_index, int frame_number) override {
     for (std::size_t i = 0; i < requests_.size(); ++i) {
@@ -236,13 +240,14 @@ public:
             Error{ErrorCode::HostError, "DualSynth: VapourSynth did not provide the requested frame"}
           );
         }
-        return Result<RequestedVideoFrame>::success(
-          RequestedVideoFrame{
-            input_index,
-            frame_number,
-            make_video_frame_view(frame, input_infos_[static_cast<std::size_t>(input_index)].format, vsapi_)
-          }
-        );
+        FrameRef owner;
+        auto view = make_video_frame_view(frame, input_infos_[static_cast<std::size_t>(input_index)].format, vsapi_);
+        if constexpr (FilterRequirements<typename Bridge::Core>::value.frame_services) {
+          FrameTraits traits{vsapi_, core_};
+          owner = detail::NativeFrame<FrameTraits>::adopt(traits, traits.clone(frame));
+          view = owner.view();
+        }
+        return Result<RequestedVideoFrame>::success({input_index, frame_number, view, std::move(owner)});
       }
     }
 
@@ -256,6 +261,39 @@ private:
   Span<const VSFrame* const> frames_;
   Span<const VideoInputInfo> input_infos_;
   const VSAPI* vsapi_;
+  VSCore* core_;
+};
+
+class InitFrameProvider final : public ds::VideoFrameProvider {
+public:
+  InitFrameProvider(Span<VSNode*> nodes, Span<const VideoInputInfo> infos, FrameTraits traits, bool services)
+    : nodes_(nodes), infos_(infos), traits_(traits), services_(services), holder_{{}, traits.api} {}
+  Result<RequestedVideoFrame> get(int input, int n) override {
+    if (input < 0 || static_cast<std::size_t>(input) >= nodes_.size() || n < 0 || n >= infos_[input].num_frames)
+      return Result<RequestedVideoFrame>::failure({ErrorCode::InvalidArgument, "DualSynth: invalid initialization frame request"});
+    char error[1024]{};
+    const VSFrame* frame = traits_.api->getFrame(n, nodes_[input], error, sizeof(error));
+    if (!frame) return Result<RequestedVideoFrame>::failure({ErrorCode::HostError, error});
+    if (services_) {
+      auto owner = detail::NativeFrame<FrameTraits>::adopt(traits_, frame);
+      auto view = owner.view();
+      return Result<RequestedVideoFrame>::success({input,n,view,std::move(owner)});
+    }
+    try { holder_.frames.push_back(frame); }
+    catch (...) { traits_.api->freeFrame(frame); throw; }
+    return Result<RequestedVideoFrame>::success({input,n,make_video_frame_view(frame,infos_[input].format,traits_.api)});
+  }
+private:
+  Span<VSNode*> nodes_;
+  Span<const VideoInputInfo> infos_;
+  FrameTraits traits_;
+  bool services_;
+  AcquiredFramesHolder holder_;
+};
+
+struct VideoRequestPlan {
+  std::vector<VideoFrameRequest> requests;
+  OutputOrigin origin;
 };
 
 template <class Bridge>
@@ -264,18 +302,18 @@ const VSFrame* execute_process_frame(
   VideoFilterData<Bridge>* data,
   Span<const VideoFrameRequest> requests,
   const AcquiredFramesHolder& holder,
+  OutputOrigin origin,
   VSFrameContext* frame_ctx,
   VSCore* core,
   const VSAPI* vsapi
 ) {
   using Filter = typename Bridge::Core;
-  const OutputOrigin origin = filter_output_origin<Filter>();
 
   const VSFrame* pixel_frame = nullptr;
   if (origin.pixels != OutputPixelPolicy::Fresh && origin.pixel_input_index >= 0) {
     for (std::size_t i = 0; i < requests.size(); ++i) {
       if (requests[i].input_index == origin.pixel_input_index &&
-          requests[i].frame_number == n) {
+          requests[i].frame_number == (origin.pixel_frame < 0 ? n : origin.pixel_frame)) {
         pixel_frame = holder.frames[i];
         break;
       }
@@ -286,7 +324,7 @@ const VSFrame* execute_process_frame(
   if (origin.prop_input_index >= 0) {
     for (std::size_t i = 0; i < requests.size(); ++i) {
       if (requests[i].input_index == origin.prop_input_index &&
-          requests[i].frame_number == n) {
+          requests[i].frame_number == (origin.prop_frame < 0 ? n : origin.prop_frame)) {
         prop_frame = holder.frames[i];
         break;
       }
@@ -312,131 +350,88 @@ const VSFrame* execute_process_frame(
     requests,
     holder.frames,
     data->input_infos,
-    vsapi
+    vsapi, core
   );
 
+  std::unique_ptr<const VSFrame, decltype(vsapi->freeFrame)> output_guard(dst, vsapi->freeFrame);
+  const VSFrame* property_frame = dst;
+  FrameTraits traits{vsapi, core};
+  detail::NativeProperties<FrameTraits> properties(traits, property_frame, true);
+  detail::NativeFrameFactory<FrameTraits> factory(traits);
+  auto view = make_mutable_video_frame_view(dst, data->output_format, vsapi);
+  if constexpr (FilterRequirements<Filter>::value.frame_services) view.properties = &properties;
   const auto result = process_video_filter<Filter>(
     n,
     provider,
-    make_mutable_video_frame_view(dst, data->output_format, vsapi),
-    data->state
+    view,
+    data->state,
+    FilterRequirements<Filter>::value.frame_services ? &factory : nullptr
   );
 
   if (!result.has_value()) {
-    vsapi->freeFrame(dst);
     vsapi->setFilterError(result.error().message.c_str(), frame_ctx);
     return nullptr;
   }
 
+  output_guard.release();
   return dst;
 }
 
 template <class Bridge>
 const VSFrame* VS_CC video_filter_get_frame(
-  int n,
-  int activation_reason,
-  void* instance_data,
-  void**,
-  VSFrameContext* frame_ctx,
-  VSCore* core,
-  const VSAPI* vsapi
+  int n, int activation_reason, void* instance_data, void** frame_data,
+  VSFrameContext* frame_ctx, VSCore* core, const VSAPI* vsapi
 ) {
   using Filter = typename Bridge::Core;
   auto* data = static_cast<VideoFilterData<Bridge>*>(instance_data);
-
-  try {
-    std::vector<VideoFrameRequest> requests;
-    auto request_result = request_video_filter<Filter>(
-      n,
-      data->input_infos,
-      requests,
-      data->state
-    );
-    if (!request_result.has_value()) {
-      vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
-      return nullptr;
-    }
-
-    request_result = request_output_origin_frame(
-      filter_output_origin<Filter>(),
-      n,
-      data->input_infos,
-      requests
-    );
-    if (!request_result.has_value()) {
-      vsapi->setFilterError(request_result.error().message.c_str(), frame_ctx);
-      return nullptr;
-    }
-
-    for (const auto& request : requests) {
-      if (request.input_index < 0 ||
-          request.input_index >= static_cast<int>(data->nodes.size())) {
-        vsapi->setFilterError("DualSynth: video input index is out of range", frame_ctx);
-        return nullptr;
-      }
-    }
-
-    if (activation_reason == arInitial) {
-      AcquiredFramesHolder holder{{}, vsapi};
-      holder.frames.reserve(requests.size());
-
-      bool all_ready = true;
-      for (const auto& request : requests) {
-        const VSFrame* frame = vsapi->getFrameFilter(
-          request.frame_number,
-          data->nodes[static_cast<std::size_t>(request.input_index)],
-          frame_ctx
-        );
-        if (frame == nullptr) {
-          all_ready = false;
-          break;
-        }
-        holder.frames.push_back(frame);
-      }
-
-      if (all_ready) {
-        // Direct-Pass fast path: zero redundant gets, exactly 1 acquisition per frame
-        return execute_process_frame<Bridge>(n, data, requests, holder, frame_ctx, core, vsapi);
-      }
-
-      // Fallback: asynchronous multi-pass scheduling
-      for (const auto& request : requests) {
-        vsapi->requestFrameFilter(
-          request.frame_number,
-          data->nodes[static_cast<std::size_t>(request.input_index)],
-          frame_ctx
-        );
-      }
-      return nullptr;
-    }
-
-    if (activation_reason != arAllFramesReady) {
-      return nullptr;
-    }
-
-    AcquiredFramesHolder holder{{}, vsapi};
-    holder.frames.reserve(requests.size());
-    for (const auto& request : requests) {
-      const VSFrame* frame = vsapi->getFrameFilter(
-        request.frame_number,
-        data->nodes[static_cast<std::size_t>(request.input_index)],
-        frame_ctx
-      );
-      if (frame == nullptr) {
-        vsapi->setFilterError("DualSynth: VapourSynth did not provide requested frame in arAllFramesReady", frame_ctx);
-        return nullptr;
-      }
-      holder.frames.push_back(frame);
-    }
-
-    return execute_process_frame<Bridge>(n, data, requests, holder, frame_ctx, core, vsapi);
-  } catch (const std::exception& error) {
-    vsapi->setFilterError(error.what(), frame_ctx);
-    return nullptr;
-  } catch (...) {
-    vsapi->setFilterError("DualSynth: unhandled exception in VapourSynth video wrapper", frame_ctx);
+  if (activation_reason == arError) {
+    delete static_cast<VideoRequestPlan*>(*frame_data);
+    *frame_data = nullptr;
     return nullptr;
   }
+  if (activation_reason != arInitial && activation_reason != arAllFramesReady) return nullptr;
+  std::unique_ptr<VideoRequestPlan> plan;
+  try {
+    if (activation_reason == arInitial) {
+      plan = std::make_unique<VideoRequestPlan>();
+      auto result = request_video_filter<Filter>(n, data->input_infos, plan->requests, data->state);
+      if (!result.has_value()) throw std::runtime_error(result.error().message);
+      plan->origin = resolve_output_origin<Filter>(n, data->state);
+      result = request_output_origin_frame(plan->origin, n, data->input_infos, plan->requests);
+      if (!result.has_value()) throw std::runtime_error(result.error().message);
+      for (const auto& request : plan->requests) {
+        if (request.input_index < 0 || static_cast<std::size_t>(request.input_index) >= data->nodes.size())
+          throw std::invalid_argument("DualSynth: video input index is out of range");
+        if (video_request_pattern<Filter>(request.input_index, data->state) == VideoRequestPattern::StrictSpatial && request.frame_number != n)
+          throw std::invalid_argument("DualSynth: temporal request violates strict spatial dependency");
+      }
+      if (plan->requests.empty()) {
+        AcquiredFramesHolder holder{{}, vsapi};
+        return execute_process_frame<Bridge>(n,data,plan->requests,holder,plan->origin,frame_ctx,core,vsapi);
+      }
+      // Standard VS4 contract: getFrameFilter is legal only after requesting frames.
+      for (const auto& request : plan->requests)
+        vsapi->requestFrameFilter(request.frame_number, data->nodes[request.input_index], frame_ctx);
+      *frame_data = plan.release();
+      return nullptr;
+    }
+    plan.reset(static_cast<VideoRequestPlan*>(*frame_data));
+    *frame_data = nullptr;
+    if (!plan) throw std::logic_error("DualSynth: missing frame request plan");
+    AcquiredFramesHolder holder{{}, vsapi};
+    holder.frames.reserve(plan->requests.size());
+    for (const auto& request : plan->requests) {
+      const VSFrame* frame = vsapi->getFrameFilter(request.frame_number, data->nodes[request.input_index], frame_ctx);
+      if (!frame) throw std::runtime_error("DualSynth: requested frame was not provided");
+      holder.frames.push_back(frame);
+    }
+    return execute_process_frame<Bridge>(n,data,plan->requests,holder,plan->origin,frame_ctx,core,vsapi);
+  } catch (const std::exception& error) {
+    vsapi->setFilterError(error.what(), frame_ctx);
+  } catch (...) {
+    vsapi->setFilterError("DualSynth: unhandled exception in VapourSynth video wrapper", frame_ctx);
+  }
+  return nullptr;
 }
 
 template <class Bridge>
@@ -493,38 +488,39 @@ void create_video_filter_bridge(
   const VSAPI* vsapi
 ) {
   using Filter = typename Bridge::Core;
-  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
   auto* data = static_cast<VideoFilterData<Bridge>*>(nullptr);
 
   try {
+    check_host_requirements<Filter>(vsapi);
     data = new VideoFilterData<Bridge>();
-    for (std::size_t i = 0; i < input_count; ++i) {
-      int error = 0;
-      data->nodes[i] = vsapi->mapGetNode(in, Bridge::vs_input_names[i], 0, &error);
-      if (error != peSuccess || data->nodes[i] == nullptr) {
-        free_video_filter_nodes(data, vsapi);
-        delete data;
-        vsapi->mapSetError(out, Bridge::missing_input_error);
-        return;
+    std::size_t flat = 0;
+    for (const auto& spec : bridge_clip_inputs<Bridge>(true)) {
+      int count = vsapi->mapNumElements(in, spec.name.c_str());
+      if (count < 0 && spec.optional) count = 0;
+      if (count < 0 || (!spec.optional && count == 0) || (!spec.array && count > 1))
+        throw std::invalid_argument(Bridge::missing_input_error);
+      data->input_groups.push_back({spec.name, flat, static_cast<std::size_t>(count)});
+      for (int element = 0; element < count; ++element, ++flat) {
+        if constexpr (Filter::input_count == dynamic_video_inputs) {
+          data->nodes.push_back(nullptr);
+          data->input_infos.push_back({});
+        }
+        int error = 0;
+        data->nodes[flat] = vsapi->mapGetNode(in, spec.name.c_str(), element, &error);
+        if (error || !data->nodes[flat]) throw std::invalid_argument(Bridge::missing_input_error);
+        const VSVideoInfo* vi = vsapi->getVideoInfo(data->nodes[flat]);
+        if (!vi || vi->width <= 0 || vi->height <= 0 || vi->numFrames <= 0)
+          throw std::invalid_argument("DualSynth: input must have constant video format and dimensions");
+        auto format = make_video_format(vi->format);
+        if (!format.has_value() || !accepts_video_format<Bridge>(format.value()))
+          throw std::invalid_argument(Bridge::vs_format_error);
+        data->input_infos[flat] = {vi->width,vi->height,vi->numFrames,format.value(),{vi->fpsNum,vi->fpsDen}};
       }
-
-      const VSVideoInfo* input_info = vsapi->getVideoInfo(data->nodes[i]);
-      const auto format = make_video_format(input_info->format);
-      if (!format.has_value() || !accepts_video_format<Bridge>(format.value())) {
-        free_video_filter_nodes(data, vsapi);
-        delete data;
-        vsapi->mapSetError(out, Bridge::vs_format_error);
-        return;
-      }
-
-      data->input_infos[i] = VideoInputInfo{
-        input_info->width,
-        input_info->height,
-        input_info->numFrames,
-        format.value(),
-        FrameRate{input_info->fpsNum, input_info->fpsDen}
-      };
     }
+    if (flat == 0) throw std::invalid_argument("DualSynth: at least one input clip is required");
+    FrameTraits traits{vsapi, core};
+    detail::NativeFrameFactory<FrameTraits> factory(traits);
+    InitFrameProvider init_frames(data->nodes, data->input_infos, traits, FilterRequirements<Filter>::value.frame_services);
 
     const auto collected = collect_video_input_infos<Filter>(data->input_infos);
     if (!collected.has_value()) {
@@ -542,11 +538,12 @@ void create_video_filter_bridge(
         }
         return init_video_filter_instance<Filter>(
           collected.value(),
-          params.value(),
-          HostKind::VapourSynth
+          &params.value(), {}, {}, HostKind::VapourSynth, &init_frames,
+          FilterRequirements<Filter>::value.frame_services ? &factory : nullptr, data->input_groups
         );
       } else {
-        return init_video_filter_instance<Filter>(collected.value(), HostKind::VapourSynth);
+        return init_video_filter_instance<Filter>(collected.value(), nullptr, {}, {}, HostKind::VapourSynth, &init_frames,
+          FilterRequirements<Filter>::value.frame_services ? &factory : nullptr, data->input_groups);
       }
     }();
     if (!init_result.has_value()) {
@@ -576,9 +573,12 @@ void create_video_filter_bridge(
     data->video_info.fpsDen = init_result.value().output.fps.denominator;
     data->output_format = init_result.value().output.format;
 
-    std::array<VSFilterDependency, input_count> dependencies{};
-    for (std::size_t i = 0; i < input_count; ++i) {
-      dependencies[i] = VSFilterDependency{data->nodes[i], rpStrictSpatial};
+    std::vector<VSFilterDependency> dependencies(data->nodes.size());
+    for (std::size_t i = 0; i < data->nodes.size(); ++i) {
+      auto pattern = video_request_pattern<Filter>(static_cast<int>(i), data->state);
+      int native = pattern == VideoRequestPattern::StrictSpatial ? rpStrictSpatial :
+                   pattern == VideoRequestPattern::NoFrameReuse ? rpNoFrameReuse : rpGeneral;
+      dependencies[i] = VSFilterDependency{data->nodes[i], native};
     }
 
     vsapi->createVideoFilter(
@@ -779,6 +779,32 @@ decltype(auto) create_video_filter_bridge(Creator&& creator) {
     Bridge::missing_input_error,
     Bridge::vs_format_error
   );
+}
+
+
+template<class Bridge>
+void create_video_filter_bundle(Span<const VSMap* const> calls, VSMap* out, VSCore* core, const VSAPI* api) {
+  try {
+    std::vector<std::unique_ptr<VSNode, decltype(api->freeNode)>> nodes;
+    nodes.reserve(calls.size());
+    for (const auto* args : calls) {
+      std::unique_ptr<VSMap, decltype(api->freeMap)> result(api->createMap(),api->freeMap);
+      if (!result) throw std::bad_alloc();
+      create_video_filter_bridge<Bridge>(args,result.get(),core,api);
+      if (const char* error = api->mapGetError(result.get())) throw std::runtime_error(error);
+      int error = 0;
+      std::unique_ptr<VSNode, decltype(api->freeNode)> node(api->mapGetNode(result.get(),"clip",0,&error),api->freeNode);
+      if (error || !node) throw std::runtime_error("DualSynth: bundle member did not return a clip");
+      nodes.push_back(std::move(node));
+    }
+    api->mapDeleteKey(out,"clip");
+    if (nodes.empty()) {
+      if (api->mapSetEmpty(out,"clip",ptVideoNode)) throw std::runtime_error("DualSynth: cannot create empty clip array");
+    }
+    for (const auto& node : nodes)
+      if (api->mapSetNode(out,"clip",node.get(),maAppend)) throw std::runtime_error("DualSynth: cannot append bundle clip");
+  } catch (const std::exception& error) { api->mapSetError(out,error.what()); }
+  catch (...) { api->mapSetError(out,"DualSynth: bundle creation failed"); }
 }
 
 } // namespace ds::vapoursynth

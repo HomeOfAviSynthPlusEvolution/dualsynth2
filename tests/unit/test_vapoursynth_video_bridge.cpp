@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 #include <dualsynth/vapoursynth/video_bridge.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <array>
@@ -8,6 +9,17 @@
 #include <type_traits>
 #include <variant>
 #include <vector>
+
+namespace {
+struct RequiredFrameServicesCore {
+  static constexpr ds::HostRequirements host_requirements{true,0,0};
+};
+}
+TEST_CASE("VapourSynth rejects incomplete opt-in frame services", "[frame_services]") {
+  VSAPI api{};
+  CHECK_THROWS_WITH(ds::vapoursynth::check_host_requirements<RequiredFrameServicesCore>(&api),
+    "DualSynth: filter requires complete VapourSynth 4 frame services");
+}
 
 namespace {
 

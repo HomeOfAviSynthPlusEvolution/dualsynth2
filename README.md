@@ -4,6 +4,9 @@ DualSynth is a modern C++ wrapper layer for writing video filters that can targe
 
 The goal is to let plugin authors keep filter logic in one C++ core while building thin host-specific entry points around it.
 
+See [frame services](FRAME_SERVICES.md) for the optional property/auxiliary-frame
+API, ownership contracts, and current host validation limits.
+
 ## Build
 
 DualSynth uses CMake and requires a C++17 compiler.

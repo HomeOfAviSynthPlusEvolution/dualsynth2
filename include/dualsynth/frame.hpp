@@ -9,6 +9,8 @@
 
 namespace ds {
 
+class FrameProperties;
+
 using FrameReleaseFn = void (*)(void*);
 
 struct PlaneView {
@@ -29,6 +31,7 @@ struct VideoFrameView {
   VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
   int plane_count = 0;
   std::array<PlaneView, 4> planes{};
+  const FrameProperties* properties = nullptr;
 
   const PlaneView& plane(int index) const {
     if (index < 0 || index >= plane_count) {
@@ -42,6 +45,7 @@ struct MutableVideoFrameView {
   VideoFormat format{ColorFamily::Gray, SampleFormat::UInt8, 1, 0, 0};
   int plane_count = 0;
   std::array<MutablePlaneView, 4> planes{};
+  FrameProperties* properties = nullptr;
 
   MutablePlaneView& plane(int index) {
     if (index < 0 || index >= plane_count) {

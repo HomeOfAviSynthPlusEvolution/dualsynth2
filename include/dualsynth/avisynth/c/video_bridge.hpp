@@ -9,6 +9,7 @@
 #include <dualsynth/error.hpp>
 #include <dualsynth/format.hpp>
 #include <dualsynth/frame.hpp>
+#include <dualsynth/detail/native_frame.hpp>
 #include <dualsynth/global_lock.hpp>
 #include <dualsynth/host_variable.hpp>
 #include <dualsynth/param.hpp>
@@ -88,6 +89,32 @@ struct CApi {
   avs_get_parity_fn get_parity{nullptr};
   avs_get_audio_fn get_audio{nullptr};
 
+  decltype(&avs_prop_num_keys) prop_num_keys{nullptr};
+  decltype(&avs_prop_get_key) prop_get_key{nullptr};
+  decltype(&avs_prop_num_elements) prop_num_elements{nullptr};
+  decltype(&avs_prop_get_int) prop_get_int{nullptr};
+  decltype(&avs_prop_get_float) prop_get_float{nullptr};
+  decltype(&avs_prop_get_data) prop_get_data{nullptr};
+  decltype(&avs_prop_get_data_size) prop_get_data_size{nullptr};
+  decltype(&avs_prop_get_data_type_hint) prop_get_data_type_hint{nullptr};
+  decltype(&avs_prop_set_int_array) prop_set_int_array{nullptr};
+  decltype(&avs_prop_set_float_array) prop_set_float_array{nullptr};
+  decltype(&avs_prop_set_data_h) prop_set_data_h{nullptr};
+  decltype(&avs_prop_set_frame) prop_set_frame{nullptr};
+  decltype(&avs_prop_delete_key) prop_delete_key{nullptr};
+  decltype(&avs_prop_get_type) prop_get_type{nullptr};
+  decltype(&avs_prop_get_frame) prop_get_frame{nullptr};
+  decltype(&avs_get_frame_props_ro) get_frame_props_ro{nullptr};
+  decltype(&avs_get_frame_props_rw) get_frame_props_rw{nullptr};
+  decltype(&avs_copy_video_frame) copy_video_frame{nullptr};
+  decltype(&avs_video_frame_get_pixel_type) video_frame_get_pixel_type{nullptr};
+  decltype(&avs_check_version) check_version{nullptr};
+  decltype(&avs_get_env_property) get_env_property{nullptr};
+  decltype(&avs_save_string) save_string{nullptr};
+  decltype(&avs_clip_get_error) clip_get_error{nullptr};
+  decltype(&avs_release_value) release_value{nullptr};
+  decltype(&avs_copy_value) copy_value{nullptr};
+
   bool loaded{false};
 
   static CApi& instance() {
@@ -137,6 +164,31 @@ struct CApi {
     if (!get_height_p) get_height_p = reinterpret_cast<avs_get_height_p_fn>(sym("avs_get_height"));
     get_parity = reinterpret_cast<avs_get_parity_fn>(sym("avs_get_parity"));
     get_audio = reinterpret_cast<avs_get_audio_fn>(sym("avs_get_audio"));
+    prop_num_keys = reinterpret_cast<decltype(prop_num_keys)>(sym("avs_prop_num_keys"));
+    prop_get_key = reinterpret_cast<decltype(prop_get_key)>(sym("avs_prop_get_key"));
+    prop_num_elements = reinterpret_cast<decltype(prop_num_elements)>(sym("avs_prop_num_elements"));
+    prop_get_int = reinterpret_cast<decltype(prop_get_int)>(sym("avs_prop_get_int"));
+    prop_get_float = reinterpret_cast<decltype(prop_get_float)>(sym("avs_prop_get_float"));
+    prop_get_data = reinterpret_cast<decltype(prop_get_data)>(sym("avs_prop_get_data"));
+    prop_get_data_size = reinterpret_cast<decltype(prop_get_data_size)>(sym("avs_prop_get_data_size"));
+    prop_get_data_type_hint = reinterpret_cast<decltype(prop_get_data_type_hint)>(sym("avs_prop_get_data_type_hint"));
+    prop_set_int_array = reinterpret_cast<decltype(prop_set_int_array)>(sym("avs_prop_set_int_array"));
+    prop_set_float_array = reinterpret_cast<decltype(prop_set_float_array)>(sym("avs_prop_set_float_array"));
+    prop_set_data_h = reinterpret_cast<decltype(prop_set_data_h)>(sym("avs_prop_set_data_h"));
+    prop_set_frame = reinterpret_cast<decltype(prop_set_frame)>(sym("avs_prop_set_frame"));
+    prop_delete_key = reinterpret_cast<decltype(prop_delete_key)>(sym("avs_prop_delete_key"));
+    prop_get_type = reinterpret_cast<decltype(prop_get_type)>(sym("avs_prop_get_type"));
+    prop_get_frame = reinterpret_cast<decltype(prop_get_frame)>(sym("avs_prop_get_frame"));
+    get_frame_props_ro = reinterpret_cast<decltype(get_frame_props_ro)>(sym("avs_get_frame_props_ro"));
+    get_frame_props_rw = reinterpret_cast<decltype(get_frame_props_rw)>(sym("avs_get_frame_props_rw"));
+    copy_video_frame = reinterpret_cast<decltype(copy_video_frame)>(sym("avs_copy_video_frame"));
+    video_frame_get_pixel_type = reinterpret_cast<decltype(video_frame_get_pixel_type)>(sym("avs_video_frame_get_pixel_type"));
+    check_version = reinterpret_cast<decltype(check_version)>(sym("avs_check_version"));
+    get_env_property = reinterpret_cast<decltype(get_env_property)>(sym("avs_get_env_property"));
+    save_string = reinterpret_cast<decltype(save_string)>(sym("avs_save_string"));
+    clip_get_error = reinterpret_cast<decltype(clip_get_error)>(sym("avs_clip_get_error"));
+    release_value = reinterpret_cast<decltype(release_value)>(sym("avs_release_value"));
+    copy_value = reinterpret_cast<decltype(copy_value)>(sym("avs_copy_value"));
     loaded = true;
   }
 };
@@ -630,6 +682,8 @@ inline MutableVideoFrameView make_mutable_video_frame_view(
   return MutableVideoFrameView{format, format.plane_count, planes};
 }
 
+#include <dualsynth/detail/c_frame_traits.inc>
+
 inline bool output_origin_matches(
   OutputOrigin origin,
   const VideoOutputInfo& output,
@@ -691,10 +745,10 @@ public:
   CVideoFrameProvider(
     Span<AVS_Clip*> clips,
     Span<const VideoInputInfo> input_infos,
-    AVS_ScriptEnvironment* env
+    AVS_ScriptEnvironment* env, bool services = false
   ) : clips_(clips),
       input_infos_(input_infos),
-      env_(env) {}
+      env_(env), services_(services) {}
 
   ~CVideoFrameProvider() override {
     auto& api = CApi::instance();
@@ -727,7 +781,14 @@ public:
       );
     }
 
-    frames_.push_back(frame);
+    if (services_) {
+      FrameTraits traits{env_, &api};
+      auto owner = detail::NativeFrame<FrameTraits>::adopt(traits, std::move(frame));
+      auto view = owner.view();
+      return Result<RequestedVideoFrame>::success({input_index,frame_number,view,std::move(owner)});
+    }
+    try { frames_.push_back(frame); }
+    catch (...) { api.release_video_frame(frame); throw; }
     return Result<RequestedVideoFrame>::success(
       RequestedVideoFrame{
         input_index,
@@ -741,6 +802,7 @@ private:
   Span<AVS_Clip*> clips_;
   Span<const VideoInputInfo> input_infos_;
   AVS_ScriptEnvironment* env_;
+  bool services_;
   std::vector<AVS_VideoFrame*> frames_;
 };
 
@@ -986,8 +1048,8 @@ struct CVideoFilterStateHolder {
   using Filter = typename Bridge::Core;
   static constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
 
-  std::array<AVS_Clip*, input_count> clips{};
-  std::array<VideoInputInfo, input_count> input_infos{};
+  VideoInputStorage<Filter, AVS_Clip*> clips{};
+  VideoInputStorage<Filter, VideoInputInfo> input_infos{};
   AVS_VideoInfo vi{};
   VideoFormat output_format{};
   VideoFilterState<Filter> state{};
@@ -1017,61 +1079,42 @@ AVS_VideoFrame* AVSC_CC c_filter_get_frame(AVS_FilterInfo* fi, int n) {
   }
 
   auto& api = CApi::instance();
+  fi->error = nullptr;
   try {
-    AVS_VideoFrame* dst = nullptr;
-    const OutputOrigin origin = filter_output_origin<Filter>();
-    if ((origin.pixels == OutputPixelPolicy::TakeFromInput || origin.pixels == OutputPixelPolicy::CopyFromInput) && origin.pixel_input_index >= 0) {
-      const auto origin_idx = static_cast<std::size_t>(origin.pixel_input_index);
-      AVS_VideoFrame* src = api.get_frame ? api.get_frame(holder->clips[origin_idx], n) : nullptr;
-      if (src) {
-        dst = api.new_video_frame_p ? api.new_video_frame_p(fi->env, &holder->vi, src)
-                                    : (api.new_video_frame_a ? api.new_video_frame_a(fi->env, &holder->vi, AVS_FRAME_ALIGN) : nullptr);
-        copy_video_frame_pixels(src, dst, holder->output_format);
-        if (api.release_video_frame) {
-          api.release_video_frame(src);
-        }
-      }
-    } else {
-      AVS_VideoFrame* prop_src = nullptr;
-      if (origin.prop_input_index >= 0 && static_cast<std::size_t>(origin.prop_input_index) < holder->clips.size() && api.get_frame) {
-        prop_src = api.get_frame(holder->clips[static_cast<std::size_t>(origin.prop_input_index)], n);
-      }
-      dst = api.new_video_frame_p ? api.new_video_frame_p(fi->env, &holder->vi, prop_src)
-                                  : (api.new_video_frame_a ? api.new_video_frame_a(fi->env, &holder->vi, AVS_FRAME_ALIGN) : nullptr);
-      if (prop_src && api.release_video_frame) {
-        api.release_video_frame(prop_src);
-      }
+    const auto origin = resolve_output_origin<Filter>(n, holder->state);
+    if (!output_origin_matches(origin, VideoOutputInfo{holder->vi.width,holder->vi.height,holder->vi.num_frames,holder->output_format,{}}, holder->input_infos))
+      throw std::invalid_argument("DualSynth: invalid output origin");
+    using Guard = std::unique_ptr<AVS_VideoFrame, decltype(api.release_video_frame)>;
+    Guard prop(nullptr, api.release_video_frame);
+    if (origin.prop_input_index >= 0) {
+      prop.reset(api.get_frame(holder->clips[origin.prop_input_index], origin.prop_frame < 0 ? n : origin.prop_frame));
+      if (!prop) throw std::runtime_error("DualSynth: property source frame unavailable");
     }
-
-    if (!dst) {
-      fi->error = "DualSynth C: failed to allocate output video frame";
-      return nullptr;
+    AVS_VideoFrame* dst = prop && api.new_video_frame_p ? api.new_video_frame_p(fi->env,&holder->vi,prop.get()) :
+      api.new_video_frame_a(fi->env,&holder->vi,AVS_FRAME_ALIGN);
+    Guard output(dst, api.release_video_frame);
+    if (!dst) throw std::runtime_error("DualSynth: output frame allocation failed");
+    if (origin.pixels != OutputPixelPolicy::Fresh) {
+      Guard src(api.get_frame(holder->clips[origin.pixel_input_index], origin.pixel_frame < 0 ? n : origin.pixel_frame), api.release_video_frame);
+      if (!src) throw std::runtime_error("DualSynth: pixel source frame unavailable");
+      copy_video_frame_pixels(src.get(),dst,holder->output_format);
     }
-
-    CVideoFrameProvider<input_count> provider(holder->clips, holder->input_infos, fi->env);
-    const auto result = process_video_filter<Filter>(
-      n,
-      provider,
-      make_mutable_video_frame_view(dst, holder->output_format),
-      holder->state
-    );
-
-    if (!result.has_value()) {
-      fi->error = result.error().message.c_str();
-      if (api.release_video_frame) {
-        api.release_video_frame(dst);
-      }
-      return nullptr;
-    }
-
-    return dst;
+    CVideoFrameProvider<input_count> provider(holder->clips,holder->input_infos,fi->env,FilterRequirements<Filter>::value.frame_services);
+    FrameTraits traits{fi->env, &api};
+    detail::NativeProperties<FrameTraits> properties(traits,dst,true);
+    detail::NativeFrameFactory<FrameTraits> factory(traits);
+    auto view = make_mutable_video_frame_view(dst,holder->output_format);
+    if constexpr (FilterRequirements<Filter>::value.frame_services) view.properties = &properties;
+    const auto result = process_video_filter<Filter>(n,provider,view,holder->state,
+      FilterRequirements<Filter>::value.frame_services ? &factory : nullptr);
+    if (!result.has_value()) throw std::runtime_error(result.error().message);
+    return output.release();
   } catch (const std::exception& error) {
-    fi->error = error.what();
-    return nullptr;
+    fi->error = save_error(fi->env,error.what());
   } catch (...) {
     fi->error = "DualSynth C: unhandled exception in get_frame";
-    return nullptr;
   }
+  return nullptr;
 }
 
 template <class Bridge>
@@ -1123,164 +1166,85 @@ void AVSC_CC c_filter_free(AVS_FilterInfo* fi) {
 template <DS_CONCEPT_VIDEO_BRIDGE Bridge>
 AVS_Value AVSC_CC create_video_filter_bridge(AVS_ScriptEnvironment* env, AVS_Value args, void*) {
   using Filter = typename Bridge::Core;
-  constexpr auto input_count = static_cast<std::size_t>(Filter::input_count);
   auto& api = CApi::instance();
-
   try {
-    std::array<AVS_Clip*, input_count> clips{};
-    std::array<VideoInputInfo, input_count> input_infos{};
-
-    for (std::size_t i = 0; i < input_count; ++i) {
-      AVS_Value clip_val = (args.type == 'a') ? avs_array_elt(args, static_cast<int>(i)) : args;
-      if (!avs_is_clip(clip_val)) {
-        return avs_new_value_error(Bridge::missing_input_error);
-      }
-      if (!api.take_clip || !api.get_video_info) {
-        return avs_new_value_error("DualSynth C: take_clip API not found");
-      }
-      clips[i] = api.take_clip(clip_val, env);
-      if (!clips[i]) {
-        return avs_new_value_error("DualSynth C: failed to take input clip");
-      }
-      const AVS_VideoInfo* vi = api.get_video_info(clips[i]);
-      if (!vi || !avs_has_video(vi)) {
-        for (std::size_t j = 0; j <= i; ++j) {
-          if (clips[j] && api.release_clip) api.release_clip(clips[j]);
-        }
-        return avs_new_value_error(Bridge::avs_format_error);
-      }
-      const auto format = make_video_format(*vi);
-      if (!format.has_value() || !accepts_video_format<Bridge>(format.value())) {
-        for (std::size_t j = 0; j <= i; ++j) {
-          if (clips[j] && api.release_clip) api.release_clip(clips[j]);
-        }
-        return avs_new_value_error(Bridge::avs_format_error);
-      }
-
-      input_infos[i] = VideoInputInfo{
-        vi->width,
-        vi->height,
-        vi->num_frames,
-        format.value(),
-        FrameRate{vi->fps_numerator, vi->fps_denominator}
-      };
-    }
-
-    const auto collected = collect_video_input_infos<Filter>(input_infos);
-    if (!collected.has_value()) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
-      }
-      return avs_new_value_error(collected.error().message.c_str());
-    }
-
-    auto init_result = [&]() -> Result<VideoFilterInstance<Filter>> {
-      if constexpr (bridge_has_descriptor<Bridge>::value) {
-        auto params = read_params(args, Bridge::descriptor());
-        if (!params.has_value()) {
-          return Result<VideoFilterInstance<Filter>>::failure(params.error());
-        }
-        return init_video_filter_instance<Filter>(
-          collected.value(),
-          &params.value(),
-          HostGlobalLockCallbacks{},
-          HostVariableCallbacks{},
-          HostKind::AviSynth
-        );
-      } else {
-        return init_video_filter_instance<Filter>(
-          collected.value(),
-          nullptr,
-          HostGlobalLockCallbacks{},
-          HostVariableCallbacks{},
-          HostKind::AviSynth
-        );
-      }
-    }();
-
-    if (!init_result.has_value()) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
-      }
-      return avs_new_value_error(init_result.error().message.c_str());
-    }
-
-    const VideoOutputInfo& output = init_result.value().output;
-    if (pixel_type(output.format) == AVS_CS_UNKNOWN) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
-      }
-      return avs_new_value_error("DualSynth C: unsupported AviSynth output format");
-    }
-
-    if (!output_origin_matches(filter_output_origin<Filter>(), output, input_infos)) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
-      }
-      return avs_new_value_error("DualSynth C: output origin is incompatible with output video info");
-    }
-
-    if (!api.new_c_filter) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
-      }
-      return avs_new_value_error("DualSynth C: avs_new_c_filter API not found");
-    }
-
+    check_host_requirements<Filter>(env);
+    if (!api.take_clip || !api.release_clip || !api.get_video_info || !api.new_c_filter ||
+        !api.set_to_clip || !api.get_frame || !api.release_video_frame ||
+        !api.new_video_frame_a)
+      throw std::runtime_error("DualSynth C: required video API entry point is missing");
     AVS_FilterInfo* fi = nullptr;
-    AVS_Clip* c_filter = api.new_c_filter(env, &fi, avs_void, 0);
-    if (!c_filter || !fi) {
-      for (auto* c : clips) {
-        if (c && api.release_clip) api.release_clip(c);
+    std::unique_ptr<AVS_Clip,decltype(api.release_clip)> clip(api.new_c_filter(env,&fi,avs_void,0),api.release_clip);
+    if (!clip || !fi) throw std::runtime_error("DualSynth: failed to create C filter");
+    auto holder = std::make_unique<CVideoFilterStateHolder<Bridge>>();
+    holder->env = fi->env;
+    std::vector<VideoInputGroup> groups;
+    std::size_t flat = 0;
+    for (const auto& spec : bridge_clip_inputs<Bridge>(false)) {
+      AVS_Value arg = args.type == 'a' ? (spec.argument < static_cast<std::size_t>(args.array_size) ? args.d.array[spec.argument] : avs_void) : (spec.argument == 0 ? args : avs_void);
+      int count = !avs_defined(arg) && spec.optional ? 0 : spec.array && avs_is_array(arg) ? avs_array_size(arg) : 1;
+      if ((!spec.optional && !count) || (spec.array && avs_defined(arg) && !avs_is_array(arg)))
+        throw std::invalid_argument(Bridge::missing_input_error);
+      groups.push_back({spec.name,flat,static_cast<std::size_t>(count)});
+      for (int element = 0; element < count; ++element, ++flat) {
+        AVS_Value value = spec.array ? arg.d.array[element] : arg;
+        if (!avs_is_clip(value)) throw std::invalid_argument(Bridge::missing_input_error);
+        if constexpr (Filter::input_count == dynamic_video_inputs) {
+          holder->clips.push_back(nullptr); holder->input_infos.push_back({});
+        }
+        holder->clips[flat] = api.take_clip(value,env);
+        if (!holder->clips[flat]) throw std::runtime_error("DualSynth: failed to retain input clip");
+        const auto* vi = api.get_video_info(holder->clips[flat]);
+        if (!vi || !avs_has_video(vi)) throw std::invalid_argument(Bridge::avs_format_error);
+        auto fmt = make_video_format(*vi);
+        if (!fmt.has_value() || !accepts_video_format<Bridge>(fmt.value())) throw std::invalid_argument(Bridge::avs_format_error);
+        holder->input_infos[flat] = {vi->width,vi->height,vi->num_frames,fmt.value(),{vi->fps_numerator,vi->fps_denominator}};
       }
-      return avs_new_value_error("DualSynth C: failed to create C filter");
     }
-
-    auto* holder = new CVideoFilterStateHolder<Bridge>{
-      std::move(clips),
-      input_infos,
-      make_video_info(output),
-      output.format,
-      std::move(init_result.value().state),
-      bridge_mt_mode<Bridge>(),
-      Bridge::parity_source_index,
-      Bridge::forward_audio,
-      env
-    };
-
-    fi->user_data = holder;
+    if (!flat || Bridge::parity_source_index >= flat) throw std::invalid_argument("DualSynth: invalid input or parity source");
+    auto collected = collect_video_input_infos<Filter>(holder->input_infos);
+    if (!collected.has_value()) throw std::invalid_argument(collected.error().message);
+    ParamValues params;
+    if constexpr (bridge_has_descriptor<Bridge>::value) {
+      auto parsed = read_params(args,Bridge::descriptor());
+      if (!parsed.has_value()) throw std::invalid_argument(parsed.error().message);
+      params = std::move(parsed.value());
+    }
+    CVideoFrameProvider<0> init_frames(holder->clips,holder->input_infos,fi->env,FilterRequirements<Filter>::value.frame_services);
+    detail::NativeFrameFactory<FrameTraits> factory(FrameTraits{fi->env,&api});
+    auto initialized = init_video_filter_instance<Filter>(collected.value(),
+      bridge_has_descriptor<Bridge>::value ? &params : nullptr, {}, {}, HostKind::AviSynth,
+      &init_frames, FilterRequirements<Filter>::value.frame_services ? &factory : nullptr, groups);
+    if (!initialized.has_value()) throw std::runtime_error(initialized.error().message);
+    const auto& output = initialized.value().output;
+    if (pixel_type(output.format) == AVS_CS_UNKNOWN) throw std::invalid_argument("DualSynth: unsupported output format");
+    if (!output_origin_matches(resolve_output_origin<Filter>(0,initialized.value().state),output,holder->input_infos))
+      throw std::invalid_argument("DualSynth: invalid output origin");
+    holder->vi = make_video_info(output);
+    holder->output_format = output.format;
+    holder->state = std::move(initialized.value().state);
+    holder->mt_mode = bridge_mt_mode<Bridge>();
+    holder->parity_source_index = Bridge::parity_source_index;
+    holder->forward_audio = Bridge::forward_audio;
+    if (holder->forward_audio) {
+      const auto* vi = api.get_video_info(holder->clips[0]);
+      holder->vi.audio_samples_per_second = vi->audio_samples_per_second;
+      holder->vi.sample_type = vi->sample_type;
+      holder->vi.num_audio_samples = vi->num_audio_samples;
+      holder->vi.nchannels = vi->nchannels;
+    }
     fi->vi = holder->vi;
-    if (holder->forward_audio && holder->clips[0] && api.get_video_info) {
-      const AVS_VideoInfo* src_vi = api.get_video_info(holder->clips[0]);
-      if (src_vi) {
-        fi->vi.audio_samples_per_second = src_vi->audio_samples_per_second;
-        fi->vi.sample_type = src_vi->sample_type;
-        fi->vi.num_audio_samples = src_vi->num_audio_samples;
-        fi->vi.nchannels = src_vi->nchannels;
-        holder->vi = fi->vi;
-      }
-    }
-
     fi->get_frame = c_filter_get_frame<Bridge>;
     fi->get_parity = c_filter_get_parity<Bridge>;
     fi->get_audio = c_filter_get_audio<Bridge>;
     fi->set_cache_hints = c_filter_set_cache_hints<Bridge>;
     fi->free_filter = c_filter_free<Bridge>;
-
-    AVS_Value result_val;
-    if (api.set_to_clip) {
-      api.set_to_clip(&result_val, c_filter);
-    } else {
-      result_val.type = 'c';
-      result_val.array_size = 1;
-      result_val.d.clip = c_filter;
-    }
-    if (api.release_clip) {
-      api.release_clip(c_filter);
-    }
-    return result_val;
+    fi->user_data = holder.release();
+    AVS_Value result = avs_void;
+    api.set_to_clip(&result,clip.get());
+    return result;
   } catch (const std::exception& error) {
-    return avs_new_value_error(error.what());
+    return avs_new_value_error(save_error(env,error.what()));
   } catch (...) {
     return avs_new_value_error("DualSynth C: unhandled exception in filter creation");
   }
@@ -1298,6 +1262,32 @@ inline void register_video_filter(AVS_ScriptEnvironment* env) {
       nullptr
     );
   }
+}
+
+
+template<class Bridge>
+AVS_Value create_video_filter_bundle(Span<const AVS_Value> calls, AVS_ScriptEnvironment* env) {
+  auto& api = CApi::instance();
+  struct Values {
+    CApi& api;
+    std::vector<AVS_Value> values;
+    ~Values() { for (auto value : values) api.release_value(value); }
+  } owned{api,{}};
+  try {
+    if (!api.check_version || api.check_version(env,11) || !api.copy_value || !api.release_value)
+      throw std::runtime_error("DualSynth: clip arrays require AviSynth interface 11 and value ownership APIs");
+    if (calls.size() > static_cast<std::size_t>(SHRT_MAX)) throw std::length_error("DualSynth: C clip bundle is too large");
+    owned.values.reserve(calls.size());
+    for (const auto& args : calls) {
+      auto value = create_video_filter_bridge<Bridge>(env,args,nullptr);
+      owned.values.push_back(value);
+      if (avs_is_error(value)) throw std::runtime_error(avs_as_error(value));
+    }
+    AVS_Value result = avs_void;
+    api.copy_value(&result,avs_new_value_array(owned.values.data(),static_cast<int>(owned.values.size())));
+    return result;
+  } catch (const std::exception& error) { return avs_new_value_error(save_error(env,error.what())); }
+  catch (...) { return avs_new_value_error("DualSynth: bundle creation failed"); }
 }
 
 } // namespace ds::avisynth::c

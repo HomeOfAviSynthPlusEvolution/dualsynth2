@@ -4,6 +4,7 @@
 
 #include "audio_filters.hpp"
 #include "copy_stamp.hpp"
+#include "frame_services.hpp"
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 
@@ -24,6 +25,11 @@ const AVS_Linkage* AVS_linkage = nullptr;
 namespace {
 
 #if defined(_MSC_VER) && !defined(_M_ARM64) && !defined(__aarch64__)
+AVSValue __cdecl create_frame_services_pair(AVSValue args, void*, IScriptEnvironment* env) {
+  const AVSValue calls[] = {args, args};
+  return ds::avisynth::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls, env);
+}
+
 void initialize_no_audio(VideoInfo& vi) {
   vi.audio_samples_per_second = 0;
   vi.sample_type = 0;
@@ -414,6 +420,11 @@ AVS_Value AVSC_CC c_create_audio_gain(AVS_ScriptEnvironment* env, AVS_Value args
   return result;
 }
 
+AVS_Value AVSC_CC c_create_frame_services_pair(AVS_ScriptEnvironment* env, AVS_Value args, void*) {
+  const AVS_Value calls[] = {args, args};
+  return ds::avisynth::c::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls, env);
+}
+
 } // namespace
 
 #if defined(_MSC_VER) && !defined(_M_ARM64) && !defined(__aarch64__)
@@ -422,6 +433,9 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   const AVS_Linkage* const vectors
 ) {
   AVS_linkage = vectors;
+  ds::avisynth::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
+  env->AddFunction("DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
+                   create_frame_services_pair, nullptr);
   env->AddFunction("DSTestPattern", "ii", create_test_pattern, nullptr);
   ds::avisynth::set_filter_mt_mode(env, "DSTestPattern", ds::avisynth::MtMode::NiceFilter);
   env->AddFunction(
@@ -470,6 +484,9 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
 DS_AVS_PLUGIN_EXPORT const char* AVSC_CC avisynth_c_plugin_init2(
   AVS_ScriptEnvironment* env
 ) {
+  ds::avisynth::c::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
+  ds::avisynth::c::add_function(env, "DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
+                              c_create_frame_services_pair, nullptr);
   ds::avisynth::c::add_function(env, "DSTestPattern", "ii", c_create_test_pattern, nullptr);
   ds::avisynth::c::register_video_filter<ds::reference::VideoIdentityBridge>(env);
   ds::avisynth::c::register_video_filter<ds::reference::VideoInvertBridge>(env);

@@ -4,6 +4,7 @@
 
 #include "audio_filters.hpp"
 #include "copy_stamp.hpp"
+#include "frame_services.hpp"
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
 
@@ -319,6 +320,14 @@ void VS_CC acceptance_copy_stamp_create(
   );
 }
 
+void VS_CC frame_services_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
+  ds::vapoursynth::create_video_filter_bridge<ds::acceptance::FrameServicesBridge>(in,out,core,api);
+}
+void VS_CC frame_services_pair(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
+  const VSMap* calls[] = {in,in};
+  ds::vapoursynth::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls,out,core,api);
+}
+
 } // namespace
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi) {
@@ -332,6 +341,8 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
     plugin
   );
 
+  vspapi->registerFunction("FrameServices",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode;",frame_services_create,nullptr,plugin);
+  vspapi->registerFunction("FrameServicesPair",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_pair,nullptr,plugin);
   vspapi->registerFunction(
     "TestPattern",
     "width:int;height:int;",

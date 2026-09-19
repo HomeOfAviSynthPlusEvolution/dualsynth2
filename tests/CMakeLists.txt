@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(dualsynth_unit_tests
   unit/test_error.cpp
   unit/test_fake_frame_lifetime.cpp
+  unit/test_frame_services.cpp
   unit/test_format.cpp
   unit/test_param.cpp
   unit/test_stateful_video_filter.cpp
@@ -58,6 +59,13 @@ if(DS_ENABLE_VAPOURSYNTH)
 endif()
 
 if(DS_ENABLE_AVISYNTH AND DS_AVISYNTH_INCLUDE_DIR)
+  if(WIN32)
+    add_executable(avisynth_frame_property_probe tools/avisynth_frame_property_probe.cpp)
+    target_compile_features(avisynth_frame_property_probe PRIVATE cxx_std_17)
+    target_include_directories(avisynth_frame_property_probe PRIVATE ${DS_AVISYNTH_INCLUDE_DIR})
+    add_test(NAME avs_host_frame_property_control COMMAND avisynth_frame_property_probe --without-property)
+    add_test(NAME avs_host_frame_property_lifetime COMMAND avisynth_frame_property_probe)
+  endif()
   add_executable(dualsynth_avisynth_runner
     tools/avisynth_runner.cpp
   )
@@ -74,6 +82,9 @@ if(DS_ENABLE_AVISYNTH AND DS_AVISYNTH_INCLUDE_DIR)
 endif()
 
 if(DS_ENABLE_VAPOURSYNTH AND TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE AND DS_VAPOURSYNTH_INCLUDE_DIR)
+  add_test(NAME vs_frame_services COMMAND ${DS_VSPIPE_EXECUTABLE}
+    --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/frame_services.vpy --)
   add_test(
     NAME vs_testpattern_info
     COMMAND
@@ -141,6 +152,31 @@ endif()
 
 if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_AVISYNTH_INCLUDE_DIR)
   set(DS_AVISYNTH_TEST_SCRIPT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration/avisynth")
+  file(GENERATE
+    OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs"
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\nsrc = DSTestPattern(16, 8)\nproduced = DSFrameServices([src, src], extra=src)\nreturn DSFrameServices([produced], verify=true)\n")
+  add_test(NAME avs_c_frame_services COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs" --backend c --frame 5 --expect-y8-sum 1664)
+  if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    add_test(NAME avs_cpp_frame_services COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs" --backend cpp --frame 5 --expect-y8-sum 1664)
+  endif()
+
+  # Exercise returned clip arrays after the creation callback has returned,
+  # including both siblings and property-held auxiliary frames on each format.
+  foreach(format IN ITEMS Y8 Y16 Y32 YUV420P10 RGBPS)
+    file(GENERATE
+      OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services_pair_${format}.avs"
+      CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\nsrc = BlankClip(width=16, height=8, length=4, pixel_type=\"${format}\")\npair = DSFrameServicesPair([src, src], extra=src)\na = DSFrameServices([pair[0]], verify=true)\nb = DSFrameServices([pair[1]], verify=true)\nreturn StackHorizontal(a, b).Prefetch(4)\n")
+    add_test(NAME avs_c_frame_services_pair_${format} COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services_pair_${format}.avs" --backend c --frame 7)
+    set_tests_properties(avs_c_frame_services_pair_${format} PROPERTIES PROCESSORS 4)
+    if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+      add_test(NAME avs_cpp_frame_services_pair_${format} COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+        --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services_pair_${format}.avs" --backend cpp --frame 7)
+      set_tests_properties(avs_cpp_frame_services_pair_${format} PROPERTIES PROCESSORS 4)
+    endif()
+  endforeach()
 
   file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/testpattern_info.avs"

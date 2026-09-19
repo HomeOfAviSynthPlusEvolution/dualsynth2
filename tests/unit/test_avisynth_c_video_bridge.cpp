@@ -1,8 +1,68 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/catch_approx.hpp>
 
 #include <avisynth_c.h>
 #include <dualsynth/avisynth/c/video_bridge.hpp>
+#include <list>
+
+namespace {
+struct ScopedApi {
+  ds::avisynth::c::CApi previous = ds::avisynth::c::CApi::instance();
+  ScopedApi() { auto& api = ds::avisynth::c::CApi::instance(); api = {}; api.loaded = true; }
+  ~ScopedApi() { ds::avisynth::c::CApi::instance() = previous; }
+};
+std::list<std::string> saved_errors;
+int released_frames = 0;
+int fake_frame_storage;
+char* AVSC_CC test_save_string(AVS_ScriptEnvironment*, const char* value, int) {
+  saved_errors.emplace_back(value);
+  return saved_errors.back().data();
+}
+AVS_VideoFrame* AVSC_CC test_new_frame(AVS_ScriptEnvironment*,const AVS_VideoInfo*,const AVS_VideoFrame*) {
+  return reinterpret_cast<AVS_VideoFrame*>(&fake_frame_storage);
+}
+AVS_VideoFrame* AVSC_CC test_new_frame_no_props(AVS_ScriptEnvironment* env,const AVS_VideoInfo* vi,int) { return test_new_frame(env,vi,nullptr); }
+void AVSC_CC test_release_frame(AVS_VideoFrame*) { ++released_frames; }
+struct ThrowingCore {
+  static constexpr int input_count = 1;
+  static constexpr ds::OutputOrigin output_origin = ds::OutputOrigin::fresh_without_props();
+  static ds::Result<ds::VideoProcessResult> process(ds::VideoProcessContext&) {
+    throw std::runtime_error(std::string("temporary error: 100% complete"));
+  }
+};
+struct ThrowingBridge { using Core = ThrowingCore; };
+struct RequiredServices { static constexpr ds::HostRequirements host_requirements{true,11,0}; };
+int AVSC_CC test_check_version(AVS_ScriptEnvironment*,int) { return 0; }
+}
+
+TEST_CASE("AviSynth C process exceptions release output and preserve error text", "[frame_services]") {
+  ScopedApi restore;
+  auto& api = ds::avisynth::c::CApi::instance();
+  api.new_video_frame_p = test_new_frame;
+  api.new_video_frame_a = test_new_frame_no_props;
+  api.release_video_frame = test_release_frame;
+  api.save_string = test_save_string;
+  released_frames = 0;
+  ds::avisynth::c::CVideoFilterStateHolder<ThrowingBridge> holder{};
+  holder.output_format.plane_count = 0; // No pixel access needed by this failing filter.
+  AVS_FilterInfo fi{};
+  fi.user_data = &holder;
+  CHECK(ds::avisynth::c::c_filter_get_frame<ThrowingBridge>(&fi,0) == nullptr);
+  CHECK(released_frames == 1);
+  REQUIRE(fi.error != nullptr);
+  CHECK(std::string(fi.error) == "temporary error: 100% complete");
+  saved_errors.clear();
+}
+
+TEST_CASE("AviSynth C rejects insufficient versions and incomplete frame APIs", "[frame_services]") {
+  ScopedApi restore;
+  CHECK_THROWS_WITH(ds::avisynth::c::check_host_requirements<RequiredServices>(nullptr),
+    "DualSynth: filter requires AviSynth interface 11");
+  ds::avisynth::c::CApi::instance().check_version = test_check_version;
+  CHECK_THROWS_WITH(ds::avisynth::c::check_host_requirements<RequiredServices>(nullptr),
+    "DualSynth: required AviSynth frame service entry point is missing");
+}
 
 TEST_CASE("AviSynth C format mapping matches standard formats", "[avisynth_c]") {
   AVS_VideoInfo vi{};
