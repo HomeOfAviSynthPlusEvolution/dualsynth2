@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dualsynth/video_filter.hpp>
+#include "frame_snapshot.hpp"
 #include <cstring>
 #include <climits>
 #include <limits>
@@ -16,6 +17,9 @@ struct FrameServices {
     bool verify = false;
     int input_count = 0;
     FrameRef first;
+    std::string snapshot;
+    bool pattern = false;
+    VideoOutputInfo output;
   };
 
   static void check(bool ok, const char* what) {
@@ -66,10 +70,14 @@ struct FrameServices {
     if (checking) verify(first.value().frame);
     const auto& in = ctx.inputs[0];
     check(in.num_frames <= INT_MAX / 2 && in.fps.numerator <= INT64_MAX / 2, "output overflow");
-    return Result<VideoInitStateResult<State>>::success({
-      {in.width,in.height,checking ? in.num_frames : in.num_frames * 2,in.format,
-       {checking ? in.fps.numerator : in.fps.numerator * 2,in.fps.denominator}},
-      {checking,static_cast<int>(ctx.inputs.size()),first.value().owner}});
+    auto snapshot = ctx.params->get_string("snapshot","");
+    auto pattern = ctx.params->get_bool("pattern",false);
+    if (!snapshot.has_value()) return Result<VideoInitStateResult<State>>::failure(snapshot.error());
+    if (!pattern.has_value()) return Result<VideoInitStateResult<State>>::failure(pattern.error());
+    const VideoOutputInfo output{in.width,in.height,checking ? in.num_frames : in.num_frames * 2,in.format,
+       {checking ? in.fps.numerator : in.fps.numerator * 2,in.fps.denominator}};
+    return Result<VideoInitStateResult<State>>::success({output,
+      {checking,static_cast<int>(ctx.inputs.size()),first.value().owner,snapshot.value(),pattern.value(),output}});
   }
   static OutputOrigin output_origin_for(int n, const State& state) {
     auto origin = OutputOrigin::fresh();
@@ -115,7 +123,22 @@ struct FrameServices {
         std::memcpy(static_cast<char*>(out.data) + y * out.stride_bytes,
                     static_cast<const char*>(in.data) + y * in.stride_bytes,bytes);
     }
-    if (state.verify) { verify({ctx.dst.format,ctx.dst.plane_count,{},ctx.dst.properties}); return Result<VideoProcessResult>::success({}); }
+    if (state.verify) {
+      verify({ctx.dst.format,ctx.dst.plane_count,{},ctx.dst.properties});
+      FrameSnapshot::save(state.snapshot,ctx.output_frame,state.output,ctx.dst);
+      return Result<VideoProcessResult>::success({});
+    }
+    if (state.pattern) for (int p = 0; p < ctx.dst.plane_count; ++p) {
+      const auto& plane = ctx.dst.plane(p);
+      for (int y = 0; y < plane.height; ++y) for (int x = 0; x < plane.width; ++x) {
+        const int value = (ctx.output_frame / 2 * 17 + p * 41 + y * 3 + x) & 255;
+        if (ctx.dst.format.sample_format == SampleFormat::Float32)
+          as_plane<float>(plane).row(y)[x] = static_cast<float>(value - 128) / 256.0f;
+        else if (bytes_per_sample(ctx.dst.format.sample_format) == 1)
+          as_plane<std::uint8_t>(plane).row(y)[x] = static_cast<std::uint8_t>(value);
+        else as_plane<std::uint16_t>(plane).row(y)[x] = static_cast<std::uint16_t>((value * 257) & ((1u << bits_per_sample(ctx.dst.format.sample_format)) - 1));
+      }
+    }
     auto aux = ctx.frame_factory->allocate({ColorFamily::Gray,SampleFormat::UInt16,1,0,0},7,3);
     auto writable = aux.view();
     auto plane = as_plane<std::uint16_t>(writable.plane(0));
@@ -145,6 +168,7 @@ struct FrameServices {
     props.set("DS_Empty",std::vector<std::int64_t>{});
     props.set("DS_Deleted",std::vector<std::int64_t>{1});
     check(props.erase("DS_Deleted") && !props.erase("DS_Deleted"),"erase result");
+    FrameSnapshot::save(state.snapshot,ctx.output_frame,state.output,ctx.dst);
     return Result<VideoProcessResult>::success({});
   }
 };
@@ -153,8 +177,8 @@ struct FrameServicesBridge {
   using Core = FrameServices;
   static constexpr const char* vs_name = "FrameServices";
   static constexpr const char* avs_name = "DSFrameServices";
-  static constexpr const char* vs_signature = "clips:vnode[];extra:vnode:opt;verify:int:opt;";
-  static constexpr const char* avs_signature = ".[extra]c[verify]b";
+  static constexpr const char* vs_signature = "clips:vnode[];extra:vnode:opt;verify:int:opt;snapshot:data:opt;pattern:int:opt;";
+  static constexpr const char* avs_signature = ".[extra]c[verify]b[snapshot]s[pattern]b";
   static constexpr const char* missing_input_error = "FrameServices requires a nonempty clip array";
   static constexpr const char* vs_format_error = "FrameServices requires planar video";
   static constexpr const char* avs_format_error = vs_format_error;
@@ -162,7 +186,8 @@ struct FrameServicesBridge {
   static constexpr bool forward_audio = false;
   static FilterDescriptor descriptor() {
     return {"FrameServices",{{"clips",ParamType::Clip,{},true,true},
-      {"extra",ParamType::Clip,{},false,false},{"verify",ParamType::Boolean,false,false,false}}};
+      {"extra",ParamType::Clip,{},false,false},{"verify",ParamType::Boolean,false,false,false},
+      {"snapshot",ParamType::String,"",false,false},{"pattern",ParamType::Boolean,false,false,false}}};
   }
 };
 

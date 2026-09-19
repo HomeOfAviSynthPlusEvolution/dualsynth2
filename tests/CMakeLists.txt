@@ -342,3 +342,23 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
     )
   endif()
 endif()
+
+# Cross-host exact comparison of generic DS2 pixels and recursive properties.
+if(WIN32 AND DS_ENABLE_AVISYNTH AND DS_ENABLE_VAPOURSYNTH AND
+   TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner AND DS_VSPIPE_EXECUTABLE)
+  find_package(Python3 QUIET COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    set(DS_DIFFERENTIAL_CPP_ARG)
+    if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+      set(DS_DIFFERENTIAL_CPP_ARG --cpp)
+    endif()
+    add_test(NAME frame_services_cross_host_differential
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/integration/frame_services_differential.py
+        --runner $<TARGET_FILE:dualsynth_avisynth_runner>
+        --vspipe ${DS_VSPIPE_EXECUTABLE} --plugin $<TARGET_FILE:dualsynth_acceptance>
+        --work ${CMAKE_CURRENT_BINARY_DIR}/frame-snapshots ${DS_DIFFERENTIAL_CPP_ARG})
+    set_tests_properties(frame_services_cross_host_differential PROPERTIES PROCESSORS 4 TIMEOUT 180)
+  else()
+    message(STATUS "DS2 cross-host differential test unavailable: Python3 interpreter not found")
+  endif()
+endif()
