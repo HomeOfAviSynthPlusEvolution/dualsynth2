@@ -2,6 +2,7 @@
 
 #include <dualsynth/frame.hpp>
 
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -79,6 +80,7 @@ private:
 class FrameFactory {
 public:
   virtual ~FrameFactory() = default;
+  WritableFrame copy(const FrameRef& source);
   virtual WritableFrame allocate(VideoFormat format, int width, int height,
                                  const FrameRef& property_source = {}) = 0;
 };
@@ -92,6 +94,29 @@ inline void validate_frame_dimensions(VideoFormat format, int width, int height)
       width > (std::numeric_limits<int>::max)() / bytes_per_sample(format.sample_format)) {
     throw std::invalid_argument("DualSynth: invalid auxiliary frame dimensions or format");
   }
+}
+
+// Copy active pixels and inherit the native property map. Property-held frame
+// references remain shared and immutable; the returned frame/map is writable.
+inline WritableFrame FrameFactory::copy(const FrameRef& source) {
+  const auto input = source.view();
+  const auto& first = input.plane(0);
+  validate_frame_dimensions(input.format, first.width, first.height);
+  auto result = allocate(input.format, first.width, first.height, source);
+  auto output = result.view();
+  if (input.plane_count != output.plane_count || input.format != output.format)
+    throw std::runtime_error("DualSynth: copied frame format mismatch");
+  for (int p = 0; p < input.plane_count; ++p) {
+    const auto& src = input.plane(p);
+    const auto& dst = output.plane(p);
+    if (src.width != dst.width || src.height != dst.height || !src.data || !dst.data)
+      throw std::runtime_error("DualSynth: copied plane geometry mismatch");
+    const auto bytes = static_cast<std::size_t>(src.width) * bytes_per_sample(input.format.sample_format);
+    for (int y = 0; y < src.height; ++y)
+      std::memcpy(static_cast<char*>(dst.data) + static_cast<std::ptrdiff_t>(y) * dst.stride_bytes,
+                  static_cast<const char*>(src.data) + static_cast<std::ptrdiff_t>(y) * src.stride_bytes, bytes);
+  }
+  return result;
 }
 
 } // namespace ds

@@ -88,7 +88,25 @@ struct FrameServices {
     if (state.verify) verify(state.first.view());
     auto src = ctx.frames.get(0,state.verify ? ctx.output_frame : ctx.output_frame / 2);
     if (!src.has_value()) return Result<VideoProcessResult>::failure(src.error());
-    if (state.verify) verify(src.value().frame);
+    if (state.verify) {
+      verify(src.value().frame);
+      auto copy = ctx.frame_factory->copy(src.value().owner);
+      auto view = copy.view();
+      for (int p = 0; p < view.plane_count; ++p) {
+        const auto& original = src.value().frame.plane(p);
+        auto& copied = view.plane(p);
+        const auto bytes = static_cast<std::size_t>(copied.width) * bytes_per_sample(view.format.sample_format);
+        for (int y = 0; y < copied.height; ++y)
+          check(std::memcmp(static_cast<const char*>(original.data) + y * original.stride_bytes,
+                            static_cast<const char*>(copied.data) + y * copied.stride_bytes, bytes) == 0,
+                "copy active plane bytes");
+        auto* pixel = static_cast<unsigned char*>(copied.data);
+        const auto before = *static_cast<const unsigned char*>(original.data);
+        *pixel ^= 1;
+        check(*static_cast<const unsigned char*>(original.data) == before, "copy plane isolation");
+      }
+      verify(std::move(copy).publish().view());
+    }
     for (int p = 0; p < ctx.dst.plane_count; ++p) {
       const auto& in = src.value().frame.plane(p);
       const auto& out = ctx.dst.plane(p);
@@ -104,8 +122,23 @@ struct FrameServices {
     for (int y = 0; y < 3; ++y) for (int x = 0; x < 7; ++x) plane.row(y)[x] = static_cast<std::uint16_t>(1000 + y * 7 + x);
     writable.properties->set("DS_Tag",std::vector<std::int64_t>{42});
     auto ref = std::move(aux).publish();
+    auto copied = ctx.frame_factory->copy(ref);
+    {
+      auto view = copied.view();
+      check(get<std::int64_t>(*view.properties,"DS_Tag") == std::vector<std::int64_t>{42}, "copy inherited properties");
+      auto pixels = as_plane<std::uint16_t>(view.plane(0));
+      for (int y = 0; y < 3; ++y) for (int x = 0; x < 7; ++x)
+        check(pixels.row(y)[x] == 1000 + y * 7 + x, "copy inherited pixels");
+      pixels.row(0)[0] = 2000;
+      view.properties->set("DS_Tag",std::vector<std::int64_t>{99});
+      check(as_plane<std::uint16_t>(ref.view().plane(0)).row(0)[0] == 1000, "copy pixel isolation");
+      check(get<std::int64_t>(*ref.view().properties,"DS_Tag") == std::vector<std::int64_t>{42}, "copy property isolation");
+      pixels.row(0)[0] = 1000;
+      view.properties->set("DS_Tag",std::vector<std::int64_t>{42});
+    }
+    auto copied_ref = std::move(copied).publish();
     auto& props = *ctx.dst.properties;
-    props.set("DS_Frames",std::vector<FrameRef>{ref,ref});
+    props.set("DS_Frames",std::vector<FrameRef>{ref,copied_ref});
     props.set("DS_Ints",std::vector<std::int64_t>{INT64_MIN,INT64_MAX,9007199254740993LL});
     props.set("DS_Floats",std::vector<double>{0.0,-0.0,1.0/8.0});
     props.set("DS_Data",std::vector<PropertyData>{{std::string("a\0b",3),DataHint::Binary},{"text",DataHint::Utf8}});
