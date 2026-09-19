@@ -462,6 +462,7 @@ inline void initialize_no_video(VideoInfo& vi) {
 }
 
 inline VideoInfo make_video_info(const VideoOutputInfo& output) {
+  c::validate_frame_rate(output.fps);
   VideoInfo vi{};
   vi.width = output.width;
   vi.height = output.height;

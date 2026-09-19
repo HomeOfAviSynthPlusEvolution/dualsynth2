@@ -1,6 +1,7 @@
 #include <dualsynth/avisynth/video_bridge.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
 
 #include <array>
 #include <cstdint>
@@ -363,4 +364,23 @@ TEST_CASE("ds::avisynth rejects native integer depths unavailable in AviSynth") 
 TEST_CASE("ds::avisynth rejects inconsistent layouts instead of normalizing them") {
   CHECK(ds::avisynth::pixel_type({ds::ColorFamily::Gray,ds::SampleFormat::UInt8,2,0,0}) == VideoInfo::CS_UNKNOWN);
   CHECK(ds::avisynth::pixel_type({ds::ColorFamily::Rgb,ds::SampleFormat::UInt8,3,1,0}) == VideoInfo::CS_UNKNOWN);
+}
+
+TEST_CASE("ds::avisynth output timing rejects narrowing and invalid denominators", "[video_timing]") {
+  ds::VideoOutputInfo output{};
+  constexpr std::int64_t maximum = 0xffffffffLL;
+  for (const auto fps : {ds::FrameRate{24000, 1001}, ds::FrameRate{0, 1},
+                        ds::FrameRate{maximum, maximum - 1}}) {
+    output.fps = fps;
+    const auto vi = ds::avisynth::make_video_info(output);
+    CHECK(vi.fps_numerator == fps.numerator);
+    CHECK(vi.fps_denominator == fps.denominator);
+  }
+  for (const auto fps : {ds::FrameRate{-1, 1}, ds::FrameRate{24, -1},
+                        ds::FrameRate{24, 0}, ds::FrameRate{maximum + 1, 1},
+                        ds::FrameRate{1, maximum + 1}}) {
+    output.fps = fps;
+    CHECK_THROWS_WITH(ds::avisynth::make_video_info(output),
+      "DualSynth: output frame rate cannot be represented by AviSynth");
+  }
 }

@@ -22,6 +22,8 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -644,7 +646,18 @@ inline void initialize_no_video(AVS_VideoInfo& vi) {
   vi.pixel_type = AVS_CS_UNKNOWN;
 }
 
+// AviSynth stores timing in unsigned 32-bit fields. Preserve the supplied
+// rational exactly; reject values that would be narrowed or have no denominator.
+inline void validate_frame_rate(FrameRate fps) {
+  constexpr auto maximum = (std::numeric_limits<unsigned>::max)();
+  if (fps.numerator < 0 || fps.numerator > maximum ||
+      fps.denominator <= 0 || fps.denominator > maximum) {
+    throw std::invalid_argument("DualSynth: output frame rate cannot be represented by AviSynth");
+  }
+}
+
 inline AVS_VideoInfo make_video_info(const VideoOutputInfo& output) {
+  validate_frame_rate(output.fps);
   AVS_VideoInfo vi{};
   vi.width = output.width;
   vi.height = output.height;
