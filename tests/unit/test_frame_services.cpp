@@ -83,3 +83,8 @@ TEST_CASE("Auxiliary allocation rejects invalid dimensions without host calls", 
   ds::VideoFormat yuv{ds::ColorFamily::Yuv,ds::SampleFormat::UInt8,3,1,1};
   CHECK_THROWS_AS(ds::validate_frame_dimensions(yuv,7,3),std::invalid_argument);
 }
+
+TEST_CASE("Invalid auxiliary sample formats fail before dimension arithmetic", "[frame_services]") {
+  ds::VideoFormat invalid{ds::ColorFamily::Gray,static_cast<ds::SampleFormat>(99),1,0,0};
+  CHECK_THROWS_AS(ds::validate_frame_dimensions(invalid,16,8),std::invalid_argument);
+}

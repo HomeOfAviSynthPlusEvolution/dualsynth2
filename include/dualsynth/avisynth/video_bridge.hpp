@@ -256,6 +256,7 @@ inline int yuv_pixel_type(VideoFormat format) {
 }
 
 inline int pixel_type(VideoFormat format) {
+  if (!is_supported_video_format(format).has_value()) return VideoInfo::CS_UNKNOWN;
   if (format.color_family == ColorFamily::Gray) {
     switch (format.sample_format) {
     case SampleFormat::UInt8:

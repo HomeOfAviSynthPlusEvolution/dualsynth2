@@ -10,6 +10,28 @@ Result<bool> is_supported_video_format(const VideoFormat& format) {
     });
   }
 
+  if (bytes_per_sample(format.sample_format) == 0)
+    return Result<bool>::failure({ErrorCode::UnsupportedFormat,"unknown video sample format"});
+  if (format.subsampling_w < 0 || format.subsampling_w > 2 ||
+      format.subsampling_h < 0 || format.subsampling_h > 2)
+    return Result<bool>::failure({ErrorCode::UnsupportedFormat,"unsupported video subsampling"});
+  switch (format.color_family) {
+  case ColorFamily::Gray:
+    if (format.plane_count != 1 || format.subsampling_w || format.subsampling_h)
+      return Result<bool>::failure({ErrorCode::UnsupportedFormat,"Gray requires one unsubsampled plane"});
+    break;
+  case ColorFamily::Rgb:
+    if ((format.plane_count != 3 && format.plane_count != 4) || format.subsampling_w || format.subsampling_h)
+      return Result<bool>::failure({ErrorCode::UnsupportedFormat,"RGB requires three or four unsubsampled planes"});
+    break;
+  case ColorFamily::Yuv:
+    if (format.plane_count != 3 && format.plane_count != 4)
+      return Result<bool>::failure({ErrorCode::UnsupportedFormat,"YUV requires three or four planes"});
+    break;
+  default:
+    return Result<bool>::failure({ErrorCode::UnsupportedFormat,"unknown video color family"});
+  }
+
   return Result<bool>::success(true);
 }
 

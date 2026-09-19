@@ -212,3 +212,8 @@ TEST_CASE("ds::avisynth::c rejects native integer depths unavailable in AviSynth
     }
   }
 }
+
+TEST_CASE("ds::avisynth::c rejects inconsistent layouts instead of normalizing them") {
+  CHECK(ds::avisynth::c::pixel_type({ds::ColorFamily::Gray,ds::SampleFormat::UInt8,2,0,0}) == AVS_CS_UNKNOWN);
+  CHECK(ds::avisynth::c::pixel_type({ds::ColorFamily::Rgb,ds::SampleFormat::UInt8,3,1,0}) == AVS_CS_UNKNOWN);
+}

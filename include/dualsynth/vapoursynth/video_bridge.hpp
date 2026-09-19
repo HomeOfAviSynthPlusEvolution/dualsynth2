@@ -41,7 +41,7 @@ inline int color_family(VideoFormat format) {
   case ColorFamily::Rgb:
     return cfRGB;
   case ColorFamily::Yuv:
-    return format.plane_count == 1 ? cfGray : cfYUV;
+    return cfYUV;
   }
   return cfUndefined;
 }
@@ -56,7 +56,9 @@ inline bool query_video_format(
   VSCore* core,
   const VSAPI* vsapi
 ) {
-  return vsapi->queryVideoFormat(
+  if (!is_supported_video_format(format).has_value() || format.plane_count == 4)
+    return false; // Native VS video formats do not contain an alpha plane.
+  if (!vsapi->queryVideoFormat(
     &output,
     color_family(format),
     sample_type(format.sample_format),
@@ -64,7 +66,13 @@ inline bool query_video_format(
     format.subsampling_w,
     format.subsampling_h,
     core
-  ) != 0;
+  )) return false;
+  return output.colorFamily == color_family(format) &&
+         output.sampleType == sample_type(format.sample_format) &&
+         output.bitsPerSample == bits_per_sample(format.sample_format) &&
+         output.bytesPerSample == bytes_per_sample(format.sample_format) &&
+         output.numPlanes == format.plane_count &&
+         output.subSamplingW == format.subsampling_w && output.subSamplingH == format.subsampling_h;
 }
 
 inline Result<VideoFormat> make_video_format(const VSVideoFormat& format) {

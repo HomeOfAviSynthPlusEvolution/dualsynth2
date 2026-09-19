@@ -89,3 +89,18 @@ TEST_CASE("All integer video depths retain their logical precision") {
   CHECK_FALSE(ds::sample_format_from_depth(false,7).has_value());
   CHECK_FALSE(ds::sample_format_from_depth(false,17).has_value());
 }
+
+TEST_CASE("Video format rejects inconsistent family plane and sample descriptions") {
+  const ds::VideoFormat invalid[] = {
+    {ds::ColorFamily::Gray,ds::SampleFormat::UInt8,2,0,0},
+    {ds::ColorFamily::Gray,ds::SampleFormat::UInt8,1,1,0},
+    {ds::ColorFamily::Rgb,ds::SampleFormat::UInt8,3,1,0},
+    {ds::ColorFamily::Yuv,ds::SampleFormat::UInt8,1,0,0},
+    {ds::ColorFamily::Yuv,ds::SampleFormat::UInt8,3,-1,0},
+    {ds::ColorFamily::Yuv,ds::SampleFormat::UInt8,3,0,3},
+    {static_cast<ds::ColorFamily>(99),ds::SampleFormat::UInt8,3,0,0},
+    {ds::ColorFamily::Gray,static_cast<ds::SampleFormat>(99),1,0,0},
+  };
+  for (const auto& format : invalid) CHECK_FALSE(ds::is_supported_video_format(format).has_value());
+  CHECK(ds::is_supported_video_format({ds::ColorFamily::Rgb,ds::SampleFormat::UInt16,4,0,0}).has_value());
+}

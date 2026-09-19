@@ -196,3 +196,16 @@ TEST_CASE("VapourSynth video bridge converts host video formats to DualSynth for
   REQUIRE(rgb.has_value());
   REQUIRE(rgb.value() == ds::VideoFormat{ds::ColorFamily::Rgb, ds::SampleFormat::Float32, 3, 0, 0});
 }
+
+TEST_CASE("VapourSynth rejects alpha and inconsistent layouts before querying the host") {
+  VSVideoFormat output{};
+  const ds::VideoFormat invalid[] = {
+    {ds::ColorFamily::Rgb,ds::SampleFormat::UInt16,4,0,0},
+    {ds::ColorFamily::Yuv,ds::SampleFormat::UInt16,4,1,1},
+    {ds::ColorFamily::Gray,ds::SampleFormat::UInt8,2,0,0},
+    {ds::ColorFamily::Yuv,ds::SampleFormat::UInt8,1,0,0},
+    {ds::ColorFamily::Rgb,ds::SampleFormat::UInt8,3,1,0},
+  };
+  for (const auto& format : invalid)
+    CHECK_FALSE(ds::vapoursynth::query_video_format(format,output,nullptr,nullptr));
+}
