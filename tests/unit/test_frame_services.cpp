@@ -120,9 +120,11 @@ struct LifetimeStages {
 struct CountingProvider : ds::VideoFrameProvider {
   int& live;
   int calls = 0;
+  std::vector<ds::VideoFrameRequest> requests;
   explicit CountingProvider(int& live) : live(live) {}
   ds::Result<ds::RequestedVideoFrame> get(int input,int n) override {
     ++calls;
+    requests.push_back({input,n});
     ds::FrameRef owner(std::make_shared<CountingFrame>(live));
     return ds::Result<ds::RequestedVideoFrame>::success({input,n,owner.view(),owner});
   }
@@ -207,4 +209,54 @@ TEST_CASE("Staged requests reject invalid ranges, no progress and contradictory 
     CHECK_THROWS_WITH(request.advance(inputs,state),messages[n]);
   }
   CHECK(live_requests == 0);
+}
+
+namespace {
+struct RepeatedStages : LifetimeStages {
+  struct State { int delta; };
+  static ds::Result<ds::VideoStageResult> advance(ds::VideoStageContext& ctx, RequestState& r) {
+    const int n = ctx.output_frame;
+    const int delta = ctx.state<State>().delta;
+    if (r.phase++ == 0) {
+      ctx.request_frame(0,n);
+      ctx.request_frame(1,n);
+      return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::RequestFrames);
+    }
+    if (r.phase == 2) {
+      r.held = ctx.frames.get(0,n).value().owner;
+      if (delta != 0) {
+        ctx.request_frame(0,n);
+        ctx.request_frame(1,n);
+        ctx.request_frame(0,n + delta);
+        ctx.request_frame(0,n + delta);
+        return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::RequestFrames);
+      }
+    }
+    CHECK(&ctx.frames.get(0,n).value().owner.storage() == &r.held.storage());
+    // Final-origin dependencies also repeat earlier-stage references, including d=0.
+    ctx.origin = ds::OutputOrigin::copy_from_input(0,0);
+    ctx.origin.pixel_frame = n + delta;
+    return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::Ready);
+  }
+};
+}
+TEST_CASE("Cross-stage temporal and zero-delta duplicates never reacquire frames", "[staged_video]") {
+  std::vector<ds::VideoInputInfo> inputs{{16,8,8},{16,8,8}};
+  int live = 0;
+  for (int delta : {-1,0,1}) {
+    CountingProvider provider(live); // No host cache: every acquisition is observable.
+    {
+      RepeatedStages::State state{delta};
+      ds::StagedVideoRequest<RepeatedStages> request(3,state);
+      ds::acquire_video_stages(request,provider,inputs,state);
+      std::vector<ds::VideoFrameRequest> expected{{0,3},{1,3}};
+      if (delta != 0) expected.push_back({0,3 + delta});
+      CHECK(provider.requests == expected);
+      CHECK(provider.calls == (delta == 0 ? 2 : 3));
+      CHECK(request.get(0,3 + delta).has_value());
+      CHECK(live == provider.calls);
+    }
+    CHECK(live == 0);
+    CHECK(live_requests == 0);
+  }
 }

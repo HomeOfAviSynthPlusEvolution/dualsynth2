@@ -380,6 +380,9 @@ void VS_CC frame_services_failed_pair(const VSMap* in, VSMap* out, void* first, 
 void VS_CC stage_probe_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
   ds::vapoursynth::create_video_filter_bridge<ds::acceptance::StageProbeBridge>(in,out,core,api);
 }
+void VS_CC temporal_stage_probe_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
+  ds::vapoursynth::create_video_filter_bridge<ds::acceptance::TemporalStageProbeBridge>(in,out,core,api);
+}
 
 } // namespace
 
@@ -395,6 +398,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction("StageProbe",ds::acceptance::StageProbeBridge::vs_signature,"clip:vnode;",stage_probe_create,nullptr,plugin);
+  vspapi->registerFunction("TemporalStageProbe",ds::acceptance::TemporalStageProbeBridge::vs_signature,"clip:vnode;",temporal_stage_probe_create,nullptr,plugin);
   vspapi->registerFunction("FrameServices",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode;",frame_services_create,nullptr,plugin);
   vspapi->registerFunction("RobustFrameServices","clips:vnode[];mode:int:opt;","clip:vnode;",robust_frame_services_create,nullptr,plugin);
   static int first_member = 1;

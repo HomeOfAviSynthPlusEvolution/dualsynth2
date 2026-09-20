@@ -463,6 +463,7 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   AVS_linkage = vectors;
   ds::avisynth::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::register_video_filter<ds::acceptance::StageProbeBridge>(env);
+  ds::avisynth::register_video_filter<ds::acceptance::TemporalStageProbeBridge>(env);
   ds::avisynth::register_video_filter<ds::acceptance::StageForwardBridge>(env);
   env->AddFunction("DSStagePair", ".[fail]i",create_stage_pair,nullptr);
   ds::avisynth::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
@@ -518,6 +519,7 @@ DS_AVS_PLUGIN_EXPORT const char* AVSC_CC avisynth_c_plugin_init2(
 ) {
   ds::avisynth::c::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::c::register_video_filter<ds::acceptance::StageProbeBridge>(env);
+  ds::avisynth::c::register_video_filter<ds::acceptance::TemporalStageProbeBridge>(env);
   ds::avisynth::c::register_video_filter<ds::acceptance::StageForwardBridge>(env);
   ds::avisynth::c::add_function(env,"DSStagePair", ".[fail]i",c_create_stage_pair,nullptr);
   ds::avisynth::c::register_video_filter<ds::acceptance::FrameServicesBridge>(env);

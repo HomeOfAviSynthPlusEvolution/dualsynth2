@@ -386,6 +386,10 @@ if(DS_ENABLE_VAPOURSYNTH AND TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABL
     --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
     ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/staged_video.vpy --)
   set_tests_properties(vs_staged_video PROPERTIES PROCESSORS 4 FAIL_REGULAR_EXPRESSION "Core freed but")
+  add_test(NAME vs_staged_temporal COMMAND ${DS_VSPIPE_EXECUTABLE}
+    --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/staged_temporal.vpy --)
+  set_tests_properties(vs_staged_temporal PROPERTIES PROCESSORS 4 FAIL_REGULAR_EXPRESSION "Core freed but")
 endif()
 if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
@@ -418,6 +422,11 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
         --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>
         --backend ${backend} --work ${CMAKE_CURRENT_BINARY_DIR}/staged-faults-${backend})
       set_tests_properties(avs_${backend}_staged_faults PROPERTIES PROCESSORS 4)
+      add_test(NAME avs_${backend}_staged_temporal COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/staged_temporal.py
+        --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>
+        --backend ${backend} --work ${CMAKE_CURRENT_BINARY_DIR}/staged-temporal-${backend})
+      set_tests_properties(avs_${backend}_staged_temporal PROPERTIES PROCESSORS 4)
       add_test(NAME avs_${backend}_host_acceptance COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/host_acceptance.py
         --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>

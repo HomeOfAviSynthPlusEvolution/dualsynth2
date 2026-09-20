@@ -70,6 +70,17 @@ struct StageProbe {
     return Result<VideoStageResult>::success(VideoStageResult::Ready);
   }
   static Result<VideoProcessResult> process(VideoProcessContext& ctx, RequestState& request) {
+    const int mode = ctx.state<State>().mode;
+    // Synthetic temporal sources: encode both input identity and frame number.
+    if (mode >= 10 && mode <= 12) {
+      if (ctx.dst.format.color_family != ColorFamily::Gray || ctx.dst.format.sample_format != SampleFormat::UInt8)
+        throw std::runtime_error("temporal source requires Gray8");
+      const auto& plane = ctx.dst.plane(0);
+      for (int y = 0; y < plane.height; ++y)
+        std::memset(static_cast<char*>(plane.data) + y * plane.stride_bytes,40 * (mode - 9) + ctx.output_frame,plane.width);
+      ctx.dst.properties->set("Stamp",std::vector<std::int64_t>{ctx.output_frame});
+      ctx.dst.properties->set("ReferenceFrame",std::vector<std::int64_t>{ctx.output_frame});
+    }
     if (ctx.state<State>().mode >= 6) return Result<VideoProcessResult>::success({});
     if (request.n != ctx.output_frame || !request.current) throw std::runtime_error("shared request state");
     const auto retained = request.current.view().properties->find("Stamp");
@@ -99,5 +110,72 @@ struct StageForwardBridge : StageProbeBridge {
   static constexpr const char* avs_name = "DSStageForward";
   static constexpr std::size_t parity_source_index = 1;
   static constexpr bool forward_audio = true;
+};
+
+struct TemporalStageProbe : StageProbe {
+  struct RequestState {
+    int phase = 0;
+    int n = -1;
+    int input = 0;
+    int target = -1;
+    FrameRef current;
+  };
+  static int integer(const FrameRef& frame, const char* key) {
+    const auto* props = frame.view().properties;
+    const auto info = props->inspect(key);
+    if (!info || info->type != PropertyType::Integer || info->count != 1)
+      throw std::runtime_error("invalid temporal metadata");
+    return static_cast<int>(std::get<std::vector<std::int64_t>>(*props->find(key))[0]);
+  }
+  static Result<VideoStageResult> advance(VideoStageContext& ctx, RequestState& r) {
+    if (r.phase++ == 0) {
+      r.n = ctx.output_frame;
+      ctx.request_frame(0,r.n);
+      ctx.request_frame(1,r.n);
+      return Result<VideoStageResult>::success(VideoStageResult::RequestFrames);
+    }
+    if (r.phase == 2) {
+      r.current = ctx.frames.get(0,r.n).value().owner;
+      const auto vectors = ctx.frames.get(1,r.n).value().owner;
+      if (integer(vectors,"Stamp") != r.n) throw std::runtime_error("wrong vectors frame");
+      const int delta = integer(vectors,"Delta");
+      if (delta < -1 || delta > 1) throw std::runtime_error("invalid temporal delta");
+      r.target = r.n + delta;
+      r.input = delta < 0 ? 2 : 3;
+      if (delta == 0 || r.target < 0 || r.target >= ctx.inputs[0].num_frames) {
+        r.input = 0;
+        r.target = r.n; // Reuse current; never request a clamped/excluded reference.
+      } else {
+        ctx.request_frame(0,r.n); // Cross-stage duplicates alongside new work.
+        ctx.request_frame(1,r.n);
+        ctx.request_frame(r.input,r.target);
+        return Result<VideoStageResult>::success(VideoStageResult::RequestFrames);
+      }
+    }
+    ctx.origin = OutputOrigin::copy_from_input(r.input,0);
+    ctx.origin.pixel_frame = r.target;
+    ctx.origin.prop_frame = r.n;
+    return Result<VideoStageResult>::success(VideoStageResult::Ready);
+  }
+  static Result<VideoProcessResult> process(VideoProcessContext& ctx, RequestState& r) {
+    const auto current = ctx.frames.get(0,r.n).value().owner;
+    const auto reference = ctx.frames.get(r.input,r.target).value().owner;
+    if (r.n != ctx.output_frame || &current.storage() != &r.current.storage() ||
+        integer(current,"Stamp") != r.n || integer(reference,"ReferenceFrame") != r.target)
+      throw std::runtime_error("temporal frame identity or lifetime mismatch");
+    if (r.input == 0 && &reference.storage() != &r.current.storage())
+      throw std::runtime_error("zero-delta current frame was reacquired");
+    const auto inherited = ctx.dst.properties->find("Stamp");
+    if (!inherited || std::get<std::vector<std::int64_t>>(*inherited) != std::vector<std::int64_t>{r.n})
+      throw std::runtime_error("temporal output inherited properties from the wrong frame");
+    ctx.dst.properties->set("TemporalTarget",std::vector<std::int64_t>{r.target});
+    ctx.dst.properties->set("TemporalInput",std::vector<std::int64_t>{r.input});
+    return Result<VideoProcessResult>::success({});
+  }
+};
+struct TemporalStageProbeBridge : StageProbeBridge {
+  using Core = TemporalStageProbe;
+  static constexpr const char* avs_name = "DSTemporalStageProbe";
+  static constexpr const char* vs_name = "TemporalStageProbe";
 };
 } // namespace ds::acceptance
