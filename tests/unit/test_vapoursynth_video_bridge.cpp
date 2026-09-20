@@ -209,3 +209,28 @@ TEST_CASE("VapourSynth rejects alpha and inconsistent layouts before querying th
   for (const auto& format : invalid)
     CHECK_FALSE(ds::vapoursynth::query_video_format(format,output,nullptr,nullptr));
 }
+
+TEST_CASE("VS output metadata rejects invalid geometry and timing", "[video_timing]") {
+  ds::VideoOutputInfo output{16,8,4,{ds::ColorFamily::Yuv,ds::SampleFormat::UInt10,3,1,1},{24000,1001}};
+  CHECK_NOTHROW(ds::vapoursynth::validate_output_video_info(output));
+  for (auto fps : {ds::FrameRate{0,0}, ds::FrameRate{INT64_MAX,1}}) {
+    auto test = output; test.fps = fps;
+    CHECK_NOTHROW(ds::vapoursynth::validate_output_video_info(test));
+  }
+  for (auto fps : {ds::FrameRate{0,1}, ds::FrameRate{24,0}, ds::FrameRate{-1,1}, ds::FrameRate{1,-1}}) {
+    auto test = output; test.fps = fps;
+    CHECK_THROWS_WITH(ds::vapoursynth::validate_output_video_info(test), "DualSynth: invalid VapourSynth output frame rate");
+  }
+  for (int width : {0,-1,15,INT_MAX}) {
+    auto test = output; test.width = width;
+    CHECK_THROWS_AS(ds::vapoursynth::validate_output_video_info(test), std::invalid_argument);
+  }
+  for (int height : {0,-1,7}) {
+    auto test = output; test.height = height;
+    CHECK_THROWS_AS(ds::vapoursynth::validate_output_video_info(test), std::invalid_argument);
+  }
+  for (int count : {0,-1}) {
+    auto test = output; test.num_frames = count;
+    CHECK_THROWS_WITH(ds::vapoursynth::validate_output_video_info(test), "DualSynth: VapourSynth output frame count must be positive");
+  }
+}

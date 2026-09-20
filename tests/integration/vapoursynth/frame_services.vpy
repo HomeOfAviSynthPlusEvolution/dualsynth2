@@ -51,6 +51,53 @@ for fmt in formats:
 for f in outputs[0].frames(prefetch=4):
     assert "DS_Frames" in f.props
     f.close()
+def robustness_checks():
+    src = core.std.BlankClip(width=16, height=8, length=4, format=vs.YUV420P10)
+    for mode, message in ((1, "dimensions"), (2, "dimensions"), (3, "frame count"),
+                          (4, "frame rate"), (5, "frame rate"), (7, "dimensions"), (8, "frame rate")):
+        try:
+            core.dsref.RobustFrameServices(clips=[src], mode=mode)
+            raise AssertionError(f"accepted invalid metadata: {mode}")
+        except vs.Error as error:
+            assert message in str(error), str(error)
+    unknown = core.dsref.RobustFrameServices(clips=[src], mode=6)
+    assert unknown.fps.numerator == 0
+    with unknown.get_frame(0) as frame:
+        assert frame.width == 16
+
+    failed = core.dsref.RobustFrameServices(clips=[src], mode=20)
+    try:
+        failed.get_frame(3)
+        raise AssertionError("processing exception was lost")
+    except vs.Error as error:
+        assert "synthetic process failure: 100%" in str(error), str(error)
+
+    def fail_upstream(n, f):
+        if n == 1:
+            raise vs.Error("synthetic upstream failure")
+        return f.copy()
+    source_error = core.std.ModifyFrame(src, src, fail_upstream)
+    consumer = core.dsref.FrameServices(clips=[source_error])
+    try:
+        consumer.get_frame(2)
+        raise AssertionError("upstream exception was lost")
+    except vs.Error as error:
+        assert "synthetic upstream failure" in str(error), str(error)
+    with consumer.get_frame(0) as frame:
+        assert "DS_Frames" in frame.props
+
+    # Two bundle instances retain different inputs; interleave both members.
+    sources = [core.std.BlankClip(src, color=[value, 0, 0]) for value in (10, 200)]
+    pairs = [core.dsref.FrameServicesPair(clips=[source]) for source in sources]
+    requests = [(i, member, n) for n in (7, 0, 3, 6) for i in (0, 1) for member in (0, 1)]
+    futures = [pairs[i][member].get_frame_async(n) for i, member, n in requests]
+    for (i, member, n), future in zip(requests, futures):
+        with future.result() as frame, sources[i].get_frame(n // 2) as reference:
+            for plane in range(frame.format.num_planes):
+                assert bytes(frame[plane]) == bytes(reference[plane])
+            assert "DS_Frames" in frame.props
+
+robustness_checks()
 outputs[0].set_output()
 # Release test-owned nodes before the script environment tears down the core.
 del src, pair, out, outputs, f, ref, sibling, frame, aux

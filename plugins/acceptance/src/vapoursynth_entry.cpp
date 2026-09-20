@@ -320,6 +320,47 @@ void VS_CC acceptance_copy_stamp_create(
   );
 }
 
+// Fault injection remains local to the synthetic VS acceptance plugin.
+struct RobustFrameServices : ds::acceptance::FrameServices {
+  static ds::Result<ds::VideoInitStateResult<State>> init(ds::VideoInitContext& ctx) {
+    auto result = FrameServices::init(ctx);
+    if (!result.has_value()) return result;
+    auto mode = ctx.params->get_int("mode", 0);
+    if (!mode.has_value()) return ds::Result<ds::VideoInitStateResult<State>>::failure(mode.error());
+    auto& output = result.value().output;
+    switch (mode.value()) {
+    case 1: output.width = 0; break;
+    case 2: output.height = -1; break;
+    case 3: output.num_frames = 0; break;
+    case 4: output.fps = {24,0}; break;
+    case 5: output.fps = {0,1}; break;
+    case 6: output.fps = {0,0}; break;
+    case 7: output.width = 15; break;
+    case 8: output.fps = {-1,1}; break;
+    case 20: result.value().state.snapshot = "throw-process"; break;
+    }
+    return result;
+  }
+  static ds::Result<ds::VideoProcessResult> process(ds::VideoProcessContext& ctx) {
+    if (ctx.state<State>().snapshot == "throw-process") {
+      auto auxiliary = ctx.frame_factory->allocate({ds::ColorFamily::Gray,ds::SampleFormat::UInt16,1,0,0},7,3);
+      throw std::runtime_error("synthetic process failure: 100%");
+    }
+    return FrameServices::process(ctx);
+  }
+};
+struct RobustFrameServicesBridge : ds::acceptance::FrameServicesBridge {
+  using Core = RobustFrameServices;
+  static ds::FilterDescriptor descriptor() {
+    auto result = FrameServicesBridge::descriptor();
+    result.params.push_back({"mode", ds::ParamType::Integer, 0, false, false});
+    return result;
+  }
+};
+void VS_CC robust_frame_services_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
+  ds::vapoursynth::create_video_filter_bridge<RobustFrameServicesBridge>(in,out,core,api);
+}
+
 void VS_CC frame_services_create(const VSMap* in, VSMap* out, void*, VSCore* core, const VSAPI* api) {
   ds::vapoursynth::create_video_filter_bridge<ds::acceptance::FrameServicesBridge>(in,out,core,api);
 }
@@ -349,6 +390,7 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction("FrameServices",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode;",frame_services_create,nullptr,plugin);
+  vspapi->registerFunction("RobustFrameServices","clips:vnode[];mode:int:opt;","clip:vnode;",robust_frame_services_create,nullptr,plugin);
   static int first_member = 1;
   vspapi->registerFunction("FrameServicesFailedFirst",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_failed_pair,&first_member,plugin);
   vspapi->registerFunction("FrameServicesFailedPair",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_failed_pair,nullptr,plugin);

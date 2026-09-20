@@ -50,6 +50,21 @@ inline int sample_type(SampleFormat sample_format) {
   return sample_format == SampleFormat::Float32 ? stFloat : stInteger;
 }
 
+inline void validate_output_video_info(const VideoOutputInfo& output) {
+  try {
+    validate_frame_dimensions(output.format, output.width, output.height);
+  } catch (const std::invalid_argument&) {
+    throw std::invalid_argument("DualSynth: invalid VapourSynth output dimensions or format");
+  }
+  if (output.num_frames <= 0)
+    throw std::invalid_argument("DualSynth: VapourSynth output frame count must be positive");
+  const auto fps = output.fps;
+  // VS uses 0/0 for an unknown or variable frame rate.
+  if (fps.numerator < 0 || fps.denominator < 0 ||
+      ((fps.numerator == 0) != (fps.denominator == 0)))
+    throw std::invalid_argument("DualSynth: invalid VapourSynth output frame rate");
+}
+
 inline bool query_video_format(
   VideoFormat format,
   VSVideoFormat& output,
@@ -562,6 +577,8 @@ void create_video_filter_bridge(
     }
 
     data->state = std::move(init_result.value().state);
+
+    validate_output_video_info(init_result.value().output);
 
     VSVideoFormat output_format{};
     if (!query_video_format(init_result.value().output.format, output_format, core, vsapi)) {
