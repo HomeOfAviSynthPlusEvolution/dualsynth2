@@ -49,6 +49,11 @@ struct ParamValue {
   ParamValue(std::vector<std::string> input) : value(std::move(input)) {}
 };
 
+enum class AvisynthArrayBinding {
+  Legacy, // String slot plus trailing name() array slot; clips use native arrays.
+  Native, // One named slot containing an actual array; no scalar coercion.
+};
+
 struct ParamSpec {
   std::string name;
   ParamType type;
@@ -57,7 +62,13 @@ struct ParamSpec {
   bool is_array = false;
   bool vs_enabled = true;
   bool avs_enabled = true;
+  AvisynthArrayBinding avs_array_binding = AvisynthArrayBinding::Legacy;
 };
+
+inline bool avisynth_native_array(const ParamSpec& param) {
+  return param.is_array && (param.type == ParamType::Clip ||
+    param.avs_array_binding == AvisynthArrayBinding::Native);
+}
 
 struct ParamEntry {
   std::string name;

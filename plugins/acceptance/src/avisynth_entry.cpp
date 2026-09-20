@@ -4,6 +4,7 @@
 
 #include "audio_filters.hpp"
 #include "copy_stamp.hpp"
+#include "parameter_probe.hpp"
 #include "frame_services.hpp"
 #include "temporal_average3.hpp"
 #include "video_filters.hpp"
@@ -433,6 +434,7 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   const AVS_Linkage* const vectors
 ) {
   AVS_linkage = vectors;
+  ds::avisynth::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
   env->AddFunction("DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
                    create_frame_services_pair, nullptr);
@@ -484,6 +486,7 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
 DS_AVS_PLUGIN_EXPORT const char* AVSC_CC avisynth_c_plugin_init2(
   AVS_ScriptEnvironment* env
 ) {
+  ds::avisynth::c::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::c::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
   ds::avisynth::c::add_function(env, "DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
                               c_create_frame_services_pair, nullptr);

@@ -51,6 +51,7 @@ struct ClipInputSpec {
   std::size_t argument;
   bool optional = false;
   bool array = false;
+  bool allow_empty = false;
 };
 
 template<class Bridge>
@@ -62,7 +63,8 @@ std::vector<ClipInputSpec> bridge_clip_inputs(bool vapoursynth) {
     for (const auto& param : descriptor.params) {
       if (!(vapoursynth ? param.vs_enabled : param.avs_enabled)) continue;
       if (param.type == ParamType::Clip)
-        result.push_back({param.name, argument, !param.required, param.is_array});
+        result.push_back({param.name, argument, !param.required, param.is_array,
+          !vapoursynth && param.avs_array_binding == AvisynthArrayBinding::Native});
       ++argument;
     }
   } else {

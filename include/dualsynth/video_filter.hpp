@@ -65,6 +65,7 @@ struct VideoInputGroup {
   std::string name;
   std::size_t first = 0;
   std::size_t count = 0;
+  bool provided = true; // Distinguishes an omitted optional clip array from [].
 };
 
 struct HostRequirements {

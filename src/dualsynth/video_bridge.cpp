@@ -81,9 +81,10 @@ Result<std::string> make_avisynth_signature(const FilterDescriptor& descriptor) 
     }
 
     const char type_name = avisynth_type_name(param.type);
-    if (param.type == ParamType::Clip && param.is_array) {
-      if (!param.required) signature << '[' << param.name << ']';
-      signature << '.'; // Real AVSValue arrays; bridge validates every clip element.
+    if (avisynth_native_array(param)) {
+      if (!param.required || param.avs_array_binding == AvisynthArrayBinding::Native)
+        signature << '[' << param.name << ']';
+      signature << '.'; // Bridge checks requiredness, the container and every element.
       continue;
     }
     if (param.required) {

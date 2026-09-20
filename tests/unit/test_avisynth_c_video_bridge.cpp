@@ -236,3 +236,69 @@ TEST_CASE("ds::avisynth::c output timing rejects narrowing and invalid denominat
       "DualSynth: output frame rate cannot be represented by AviSynth");
   }
 }
+
+TEST_CASE("AviSynth checked parameters distinguish omission, emptiness and invalid types", "[avs_params]") {
+  using namespace ds;
+  FilterDescriptor descriptor{"Params", {
+    {"ints", ParamType::Integer, {}, false, true, true, true, AvisynthArrayBinding::Native},
+    {"floats", ParamType::Float, {}, false, true, true, true, AvisynthArrayBinding::Native},
+    {"legacy", ParamType::Integer, {}, false, true},
+    {"flag", ParamType::Boolean},
+    {"number", ParamType::Integer}
+  }};
+  AVS_Value good[] = {avs_new_value_int(7), avs_new_value_int(-2)};
+  AVS_Value args[] = {avs_new_value_array(good, 2), avs_new_value_array(nullptr, 0),
+    avs_void, avs_new_value_bool(0), avs_new_value_int(0), avs_new_value_array(good, 2)};
+  auto read = [&] { return ds::avisynth::c::read_params(avs_new_value_array(args, 6), descriptor); };
+  auto result = read();
+  REQUIRE(result.has_value());
+  CHECK(result.value().get_int_array("ints", {}).value() == std::vector<std::int64_t>{7,-2});
+  CHECK(result.value().get_int_array("legacy", {}).value() == std::vector<std::int64_t>{7,-2});
+  CHECK(result.value().get_double_array("floats", {123}).value().empty());
+  CHECK_FALSE(result.value().get_bool("flag", true).value());
+  CHECK(result.value().get_int64("number", 123).value() == 0);
+  args[0] = avs_void;
+  result = read();
+  REQUIRE(result.has_value());
+  CHECK(result.value().get_int_array("ints", {123}).value() == std::vector<std::int64_t>{123});
+  descriptor.params[0].required = true;
+  CHECK_FALSE(read().has_value());
+  args[0] = avs_new_value_array(nullptr, 0);
+  CHECK(read().has_value());
+  args[0] = avs_new_value_int(3);
+  result = read();
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().message == "AviSynth parameter 'ints': expected array");
+  args[0] = avs_new_value_array(good, 2);
+  good[1] = avs_new_value_string("wrong");
+  result = read();
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().message == "AviSynth parameter 'ints': element[1]: expected integer");
+  good[1] = avs_new_value_int(4);
+  args[3] = avs_new_value_int(0);
+  result = read();
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().message == "AviSynth parameter 'flag': expected boolean");
+  args[3] = avs_new_value_bool(0);
+  args[5] = avs_new_value_int(1);
+  result = read();
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error().message == "AviSynth parameter 'legacy': expected array");
+}
+
+TEST_CASE("AviSynth C validates all scalar and array element types before reading unions", "[avs_params]") {
+  ds::avisynth::c::AvisynthCValueParamSource source(avs_new_value_bool(0));
+  CHECK_THROWS(source.as_int(0));
+  CHECK_THROWS(source.as_float(0));
+  CHECK_THROWS(source.as_string(0));
+  AVS_Value element = avs_void;
+  element.type = 'c';
+  element.d.clip = nullptr;
+  AVS_Value array = avs_new_value_array(&element, 1);
+  AVS_Value args = avs_new_value_array(&array, 1);
+  ds::avisynth::c::AvisynthCValueParamSource arrays(args);
+  CHECK_THROWS_WITH(arrays.as_int_array(0), "element[0]: expected integer");
+  CHECK_THROWS_WITH(arrays.as_float_array(0), "element[0]: expected number");
+  CHECK_THROWS_WITH(arrays.as_bool_array(0), "element[0]: expected boolean");
+  CHECK_THROWS_WITH(arrays.as_string_array(0), "element[0]: expected string");
+}

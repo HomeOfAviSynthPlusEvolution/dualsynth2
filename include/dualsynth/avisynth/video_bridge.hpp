@@ -785,14 +785,19 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
     std::vector<VideoInputGroup> groups;
     std::size_t flat = 0;
     for (const auto& spec : bridge_clip_inputs<Bridge>(false)) {
-      const AVSValue& arg = args.IsArray() ? args[static_cast<int>(spec.argument)] : args;
+      const AVSValue missing;
+      const AVSValue& arg = args.IsArray()
+        ? (spec.argument < static_cast<std::size_t>(args.ArraySize()) ? args[static_cast<int>(spec.argument)] : missing)
+        : (spec.argument == 0 ? args : missing);
       int count = !arg.Defined() && spec.optional ? 0 : spec.array && arg.IsArray() ? arg.ArraySize() : 1;
-      if ((!spec.optional && !count) || (spec.array && arg.Defined() && !arg.IsArray()))
-        throw std::invalid_argument(Bridge::missing_input_error);
-      groups.push_back({spec.name,flat,static_cast<std::size_t>(count)});
+      if (!spec.optional && (!arg.Defined() || (!count && !spec.allow_empty)))
+        throw std::invalid_argument("missing required AviSynth clip parameter '" + spec.name + "'");
+      if (spec.array && arg.Defined() && !arg.IsArray())
+        throw std::invalid_argument("AviSynth parameter '" + spec.name + "': expected clip array");
+      groups.push_back({spec.name,flat,static_cast<std::size_t>(count),arg.Defined()});
       for (int element = 0; element < count; ++element, ++flat) {
         const AVSValue& value = spec.array ? arg[element] : arg;
-        if (!value.IsClip()) throw std::invalid_argument(Bridge::missing_input_error);
+        if (!value.IsClip()) throw std::invalid_argument("AviSynth parameter '" + spec.name + "' element[" + std::to_string(element) + "]: expected clip");
         if constexpr (Filter::input_count == dynamic_video_inputs) {
           clips.push_back({}); input_infos.push_back({});
         }
@@ -871,205 +876,122 @@ AVSValue create_video_filter_bridge(AVSValue args, IScriptEnvironment* env) {
   return {};
 }
 
-template <class Source>
-Result<ParamValues> read_params_from_source(
-  const Source& source,
-  const FilterDescriptor& descriptor
-) {
-  auto validation = validate_filter_descriptor(descriptor);
-  if (!validation.has_value()) {
-    return Result<ParamValues>::failure(validation.error());
-  }
-
-  int base_count = 0;
-  for (const auto& param : descriptor.params) {
-    if (param.avs_enabled) {
-      ++base_count;
-    }
-  }
-
-  ParamValues values{};
-  int base_index = 0;
-  int array_index = base_count;
-
-  for (const auto& param : descriptor.params) {
-    if (!param.avs_enabled) {
-      continue;
-    }
-
-    const int current_base_index = base_index++;
-    if (param.type == ParamType::Clip) {
-      continue;
-    }
-
-    try {
-      if (param.is_array) {
-        const int current_array_index = array_index++;
-        if (source.defined(current_array_index)) {
-          switch (param.type) {
-          case ParamType::Integer:
-            values.entries.push_back(ParamEntry{
-              param.name,
-              ParamValue{source.as_int_array(current_array_index)}
-            });
-            break;
-          case ParamType::Float:
-            values.entries.push_back(ParamEntry{
-              param.name,
-              ParamValue{source.as_float_array(current_array_index)}
-            });
-            break;
-          case ParamType::Boolean:
-            values.entries.push_back(ParamEntry{
-              param.name,
-              ParamValue{source.as_bool_array(current_array_index)}
-            });
-            break;
-          case ParamType::String:
-            values.entries.push_back(ParamEntry{
-              param.name,
-              ParamValue{source.as_string_array(current_array_index)}
-            });
-            break;
-          case ParamType::Clip:
-            break;
-          }
-          continue;
-        }
-
-        if (source.defined(current_base_index)) {
-          values.entries.push_back(ParamEntry{
-            param.name,
-            ParamValue{source.as_string(current_base_index)}
-          });
-          continue;
-        }
-
-        if (param.required) {
-          return Result<ParamValues>::failure({
-            ErrorCode::InvalidArgument,
-            "missing required AviSynth array parameter '" + param.name + "'"
-          });
-        }
-        continue;
-      }
-
-      if (!source.defined(current_base_index)) {
-        if (param.required) {
-          return Result<ParamValues>::failure({
-            ErrorCode::InvalidArgument,
-            "missing required AviSynth parameter '" + param.name + "'"
-          });
-        }
-        continue;
-      }
-
-      switch (param.type) {
-      case ParamType::Integer:
-        values.entries.push_back(ParamEntry{
-          param.name,
-          ParamValue{source.as_int(current_base_index)}
-        });
-        break;
-      case ParamType::Float:
-        values.entries.push_back(ParamEntry{
-          param.name,
-          ParamValue{source.as_float(current_base_index)}
-        });
-        break;
-      case ParamType::Boolean:
-        values.entries.push_back(ParamEntry{
-          param.name,
-          ParamValue{source.as_bool(current_base_index)}
-        });
-        break;
-      case ParamType::String:
-        values.entries.push_back(ParamEntry{
-          param.name,
-          ParamValue{source.as_string(current_base_index)}
-        });
-        break;
-      case ParamType::Clip:
-        break;
-      }
-    } catch (...) {
-      return Result<ParamValues>::failure({
-        ErrorCode::InvalidArgument,
-        "AviSynth parameter '" + param.name + "' has the wrong type"
-      });
-    }
-  }
-
-  return Result<ParamValues>::success(std::move(values));
-}
+using ds::avisynth::param_detail::read_params_from_source;
 
 class AvisynthValueParamSource {
 public:
   explicit AvisynthValueParamSource(const AVSValue& args) : args_(args) {}
 
-  bool defined(int index) const {
-    return args_[index].Defined();
-  }
+  bool defined(int index) const { return get_elt(index).Defined(); }
 
   std::int64_t as_int(int index) const {
-    return args_[index].AsInt();
-  }
-
-  double as_float(int index) const {
-    return args_[index].AsFloat();
-  }
-
-  bool as_bool(int index) const {
-    return args_[index].AsBool();
-  }
-
-  std::string as_string(int index) const {
-    return args_[index].AsString();
+    const auto& v = get_elt(index);
+    require(v.IsInt(), "expected integer");
+    return read_integer(v);
   }
 
   std::vector<std::int64_t> as_int_array(int index) const {
-    const AVSValue& array = args_[index];
+    const auto& array = get_elt(index);
+    require(array.IsArray(), "expected array");
     std::vector<std::int64_t> output;
-    output.reserve(static_cast<std::size_t>(array.ArraySize()));
-    for (int i = 0; i < array.ArraySize(); ++i) {
-      output.push_back(array[i].AsInt());
+    const int count = array.ArraySize();
+    output.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+      const auto& v = array[i];
+      if (!(v.IsInt()))
+        throw std::invalid_argument("element[" + std::to_string(i) + "]: expected integer");
+      output.push_back(read_integer(v));
     }
     return output;
+  }
+
+  double as_float(int index) const {
+    const auto& v = get_elt(index);
+    require(v.IsFloat(), "expected number");
+    return v.AsFloat();
   }
 
   std::vector<double> as_float_array(int index) const {
-    const AVSValue& array = args_[index];
+    const auto& array = get_elt(index);
+    require(array.IsArray(), "expected array");
     std::vector<double> output;
-    output.reserve(static_cast<std::size_t>(array.ArraySize()));
-    for (int i = 0; i < array.ArraySize(); ++i) {
-      output.push_back(array[i].AsFloat());
+    const int count = array.ArraySize();
+    output.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+      const auto& v = array[i];
+      if (!(v.IsFloat()))
+        throw std::invalid_argument("element[" + std::to_string(i) + "]: expected number");
+      output.push_back(v.AsFloat());
     }
     return output;
+  }
+
+  bool as_bool(int index) const {
+    const auto& v = get_elt(index);
+    require(v.IsBool(), "expected boolean");
+    return v.AsBool();
   }
 
   std::vector<bool> as_bool_array(int index) const {
-    const AVSValue& array = args_[index];
+    const auto& array = get_elt(index);
+    require(array.IsArray(), "expected array");
     std::vector<bool> output;
-    output.reserve(static_cast<std::size_t>(array.ArraySize()));
-    for (int i = 0; i < array.ArraySize(); ++i) {
-      output.push_back(array[i].AsBool());
+    const int count = array.ArraySize();
+    output.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+      const auto& v = array[i];
+      if (!(v.IsBool()))
+        throw std::invalid_argument("element[" + std::to_string(i) + "]: expected boolean");
+      output.push_back(v.AsBool());
     }
     return output;
   }
 
+  std::string as_string(int index) const {
+    const auto& v = get_elt(index);
+    require(v.IsString(), "expected string");
+    return v.AsString();
+  }
+
   std::vector<std::string> as_string_array(int index) const {
-    const AVSValue& array = args_[index];
+    const auto& array = get_elt(index);
+    require(array.IsArray(), "expected array");
     std::vector<std::string> output;
-    output.reserve(static_cast<std::size_t>(array.ArraySize()));
-    for (int i = 0; i < array.ArraySize(); ++i) {
-      output.emplace_back(array[i].AsString());
+    const int count = array.ArraySize();
+    output.reserve(static_cast<std::size_t>(count));
+    for (int i = 0; i < count; ++i) {
+      const auto& v = array[i];
+      if (!(v.IsString()))
+        throw std::invalid_argument("element[" + std::to_string(i) + "]: expected string");
+      output.push_back(v.AsString());
     }
     return output;
   }
 
 private:
+  static void require(bool condition, const char* message) {
+    if (!condition) throw std::invalid_argument(message);
+  }
+
+  static std::int64_t read_integer(const AVSValue& value) {
+    // Older hosts have no AsLong linkage entry; their integers are 32 bit.
+    if (AVS_linkage && AVS_linkage->Size > 0 && static_cast<std::size_t>(AVS_linkage->Size) >=
+        offsetof(AVS_Linkage, AsLong1) + sizeof(AVS_linkage->AsLong1) &&
+        AVS_linkage->AsLong1)
+      return value.AsLong();
+    return value.AsInt();
+  }
+
+  const AVSValue& get_elt(int index) const {
+    if (args_.IsArray())
+      return index >= 0 && index < args_.ArraySize() ? args_[index] : missing_;
+    return index == 0 ? args_ : missing_;
+  }
+
   const AVSValue& args_;
+  AVSValue missing_;
 };
+
 
 inline Result<ParamValues> read_params(
   const AVSValue& args,

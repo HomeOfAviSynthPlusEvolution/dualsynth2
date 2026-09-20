@@ -1,0 +1,28 @@
+LoadPlugin("@PLUGIN@")
+src = BlankClip(width=16, height=8, length=1, pixel_type="Y8")
+a = BlankClip(src, width=8)
+b = BlankClip(src, width=12)
+precise = Value("1.0000000000000002")
+hi = 9223372036854775807
+lo = -hi - 1
+x = DSParameterProbe(src, [lo, hi], "3,4", [precise, -2.5], [a,b], hi, precise)
+x = DSParameterProbe(src, clips=[a,b], floats=[precise, -2.5], integer=hi, number=precise, ints=[lo,hi], legacy="3,4")
+x = DSParameterProbe(src, ints=[], floats=[], clips=[], integer=0, flag=false, mode="empty", extra=[])
+x = DSParameterProbe(src, clips=[], mode="missing")
+function expect_error(clip src, string expression, string message) {
+  caught = false
+  try {
+    Eval(expression)
+  } catch (error) {
+    Assert(FindStr(error, message) > 0, error)
+    caught = true
+  }
+  Assert(caught, "expected rejection: " + expression)
+  return src
+}
+src = expect_error(src, """DSParameterProbe(src, ints=0, clips=[], mode="missing")""", "parameter 'ints': expected array")
+src = expect_error(src, """DSParameterProbe(src, ints=[1, false], clips=[], mode="missing")""", "parameter 'ints': element[1]: expected integer")
+src = expect_error(src, """DSParameterProbe(src, floats=[1.0, false], clips=[], mode="missing")""", "parameter 'floats': element[1]: expected number")
+src = expect_error(src, """DSParameterProbe(src, clips=[src, 0], mode="missing")""", "parameter 'clips' element[1]: expected clip")
+src = expect_error(src, """DSParameterProbe(src, mode="missing")""", "required AviSynth clip parameter 'clips'")
+return x

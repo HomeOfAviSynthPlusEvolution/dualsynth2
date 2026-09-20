@@ -519,10 +519,11 @@ void create_video_filter_bridge(
     std::size_t flat = 0;
     for (const auto& spec : bridge_clip_inputs<Bridge>(true)) {
       int count = vsapi->mapNumElements(in, spec.name.c_str());
+      const bool provided = count >= 0;
       if (count < 0 && spec.optional) count = 0;
       if (count < 0 || (!spec.optional && count == 0) || (!spec.array && count > 1))
         throw std::invalid_argument(Bridge::missing_input_error);
-      data->input_groups.push_back({spec.name, flat, static_cast<std::size_t>(count)});
+      data->input_groups.push_back({spec.name, flat, static_cast<std::size_t>(count),provided});
       for (int element = 0; element < count; ++element, ++flat) {
         if constexpr (Filter::input_count == dynamic_video_inputs) {
           data->nodes.push_back(nullptr);

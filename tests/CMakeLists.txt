@@ -164,6 +164,19 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
       --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs" --backend cpp --frame 5 --expect-y8-sum 1664)
   endif()
 
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/parameter_binding.avs.in")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/parameter_binding.avs.in" DS_PARAMETER_SCRIPT)
+  string(REPLACE "@PLUGIN@" "$<TARGET_FILE:dualsynth_acceptance>" DS_PARAMETER_SCRIPT "${DS_PARAMETER_SCRIPT}")
+  file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs"
+    CONTENT "${DS_PARAMETER_SCRIPT}")
+  add_test(NAME avs_c_parameter_binding COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs" --backend c --frame 0)
+  if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    add_test(NAME avs_cpp_parameter_binding COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs" --backend cpp --frame 0)
+  endif()
+
   # Exercise returned clip arrays after the creation callback has returned,
   # including both siblings and property-held auxiliary frames on each format.
   foreach(format IN ITEMS Y8 Y16 Y32 YUV420P10 RGBPS)

@@ -170,3 +170,19 @@ TEST_CASE("Output origin requests its source frame and rejects invalid inputs") 
   REQUIRE(requests.size() == 2);
   REQUIRE(requests[1] == ds::VideoFrameRequest{0, 4});
 }
+
+TEST_CASE("Native AviSynth arrays keep names and do not consume legacy tail slots", "[avs_params]") {
+  using namespace ds;
+  FilterDescriptor descriptor{"Mixed", {
+    {"native", ParamType::Integer, {}, true, true, true, true, AvisynthArrayBinding::Native},
+    {"legacy", ParamType::Float, {}, false, true},
+    {"clips", ParamType::Clip, {}, true, true, true, true, AvisynthArrayBinding::Native},
+    {"vs_only", ParamType::Integer, {}, false, true, true, false},
+    {"flag", ParamType::Boolean}
+  }};
+  auto signature = make_avisynth_signature(descriptor);
+  REQUIRE(signature.has_value());
+  CHECK(signature.value() == "[native].[legacy]s[clips].[flag]b[legacy()]f");
+  descriptor.params[0].is_array = false;
+  CHECK_FALSE(validate_filter_descriptor(descriptor).has_value());
+}

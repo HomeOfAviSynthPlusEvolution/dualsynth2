@@ -269,6 +269,11 @@ Result<std::vector<std::string>> ParamValues::get_string_array(
 }
 
 Result<bool> validate_param_spec(const ParamSpec& spec) {
+  if (spec.avs_array_binding != AvisynthArrayBinding::Legacy &&
+      (spec.avs_array_binding != AvisynthArrayBinding::Native || !spec.is_array)) {
+    return Result<bool>::failure({ErrorCode::InvalidArgument,
+      "parameter '" + spec.name + "' has an invalid AviSynth array binding"});
+  }
   if (spec.name.empty()) {
     return Result<bool>::failure({
       ErrorCode::InvalidArgument,

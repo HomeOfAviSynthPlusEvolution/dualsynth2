@@ -79,6 +79,43 @@ adding DualSynth.
 
 Write the filter core against the DualSynth C++ API, then provide the VapourSynth and/or AviSynth+ bridge entry points needed by the host.
 
+## AviSynth parameter binding
+
+AviSynth C and C++ readers validate scalar and array element types before
+conversion. Integers retain the host's full signed 64-bit range and floating
+values retain its double precision. C++ uses `AsLong` when the host linkage
+provides it, falling back to `AsInt` for older hosts. Errors identify the
+parameter and, for an invalid array element, its zero-based index. Floats also
+accept host integers; booleans require actual booleans.
+
+Array parameters default to `AvisynthArrayBinding::Legacy`, preserving the
+existing string slot and trailing `name()` slot for non-clip arrays. Clip
+arrays already use native arrays. To explicitly bind an array to one named
+argument slot, set the final `ParamSpec` field:
+
+```cpp
+ds::ParamSpec vectors{"vectors", ds::ParamType::Integer, {}, false, true};
+vectors.avs_array_binding = ds::AvisynthArrayBinding::Native;
+```
+
+This generates `[vectors].` and accepts `vectors=[1, 2]` or an array in the
+corresponding positional slot. It works for integer, float, boolean, string
+and clip arrays. The reader requires an actual array, checks each element,
+and enforces `required` even though the host signature uses a named slot.
+Native arrays consume no trailing slot and can coexist with legacy bindings.
+VapourSynth signatures are unaffected.
+
+Omitted values remain absent from `ParamValues`; explicit zero, false and
+empty arrays remain present. `VideoInputGroup::provided` likewise distinguishes
+omitted clip groups from empty arrays. An explicitly native required clip
+array may be empty; the filter decides its meaning. The video bridge still
+requires at least one total input and a valid parity source. Legacy required
+clip arrays retain their nonempty requirement.
+
+Rebuild the core and bridges together after these C++ descriptor changes.
+The framework does not apply int32 saturation, integer-to-boolean conversion,
+or downstream default/inheritance rules.
+
 ## Plane strides
 
 `Plane<T>`, `RestrictPlane<T>`, `RowCursor<T>` and their factories take strides
