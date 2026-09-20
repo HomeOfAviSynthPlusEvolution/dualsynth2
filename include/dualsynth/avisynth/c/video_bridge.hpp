@@ -1197,10 +1197,11 @@ AVS_Value create_video_filter_bundle(Span<const AVS_Value> calls, AVS_ScriptEnvi
       throw std::runtime_error("DualSynth: clip arrays require AviSynth interface 11 and value ownership APIs");
     if (calls.size() > static_cast<std::size_t>(SHRT_MAX)) throw std::length_error("DualSynth: C clip bundle is too large");
     owned.values.reserve(calls.size());
-    for (const auto& args : calls) {
-      auto value = create_video_filter_bridge<Bridge>(env,args,nullptr);
+    for (std::size_t i = 0; i < calls.size(); ++i) {
+      auto value = create_video_filter_bridge<Bridge>(env,calls[i],nullptr);
       owned.values.push_back(value);
-      if (avs_is_error(value)) throw std::runtime_error(avs_as_error(value));
+      if (avs_is_error(value)) throw std::runtime_error(
+        "DualSynth: bundle member[" + std::to_string(i) + "]: " + avs_as_error(value));
     }
     AVS_Value result = avs_void;
     api.copy_value(&result,avs_new_value_array(owned.values.data(),static_cast<int>(owned.values.size())));

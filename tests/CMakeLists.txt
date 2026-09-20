@@ -413,6 +413,11 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
         --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>
         --backend ${backend} --work ${CMAKE_CURRENT_BINARY_DIR}/staged-faults-${backend})
       set_tests_properties(avs_${backend}_staged_faults PROPERTIES PROCESSORS 4)
+      add_test(NAME avs_${backend}_host_acceptance COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/host_acceptance.py
+        --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>
+        --backend ${backend} --work ${CMAKE_CURRENT_BINARY_DIR}/host-acceptance-${backend})
+      set_tests_properties(avs_${backend}_host_acceptance PROPERTIES PROCESSORS 4)
     endforeach()
   endif()
 endif()

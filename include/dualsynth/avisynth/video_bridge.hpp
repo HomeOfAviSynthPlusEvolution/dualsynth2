@@ -1036,7 +1036,17 @@ AVSValue create_video_filter_bundle(Span<const AVSValue> calls, IScriptEnvironme
   if (calls.size() > static_cast<std::size_t>(INT_MAX)) env->ThrowError("DualSynth: clip bundle is too large");
   std::vector<AVSValue> values;
   values.reserve(calls.size());
-  for (const auto& args : calls) values.push_back(create_video_filter_bridge<Bridge>(args,env));
+  for (std::size_t i = 0; i < calls.size(); ++i) {
+    try {
+      values.push_back(create_video_filter_bridge<Bridge>(calls[i],env));
+    } catch (const AvisynthError& error) {
+      env->ThrowError("DualSynth: bundle member[%zu]: %s",i,error.msg ? error.msg : "AviSynth error");
+    } catch (const std::exception& error) {
+      env->ThrowError("DualSynth: bundle member[%zu]: %s",i,error.what());
+    } catch (...) {
+      env->ThrowError("DualSynth: bundle member[%zu]: unhandled exception",i);
+    }
+  }
   return AVSValue(values.data(),static_cast<int>(values.size()));
 }
 

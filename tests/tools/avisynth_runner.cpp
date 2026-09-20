@@ -31,6 +31,12 @@ const AVS_Linkage* AVS_linkage = nullptr;
 
 namespace {
 
+std::uint64_t audio_hash(const std::vector<std::byte>& bytes) {
+  std::uint64_t hash = 14695981039346656037ULL;
+  for (auto byte : bytes) { hash ^= static_cast<unsigned char>(byte); hash *= 1099511628211ULL; }
+  return hash;
+}
+
 enum class Mode {
   Info,
   Video,
@@ -457,13 +463,17 @@ void run_with_c_environment(const Options& options, const DynamicLibrary& runtim
       if (vi->num_audio_samples > 0 && samples > vi->num_audio_samples) {
         samples = vi->num_audio_samples;
       }
-      int sample_bytes = sizeof(float);
-      const int64_t bytes = samples * vi->nchannels * sample_bytes;
+      const int64_t bytes = avs_bytes_from_audio_samples(vi,samples);
       std::vector<std::byte> buffer(static_cast<std::size_t>(bytes));
-      c_api.get_audio(clip, buffer.data(), 0, samples);
+      if (c_api.get_audio(clip, buffer.data(), 0, samples) != 0) {
+        const char* native_error = c_api.clip_get_error(clip);
+        const std::string error = native_error ? native_error : "get_audio failed";
+        c_api.release_clip(clip);
+        throw std::runtime_error(error);
+      }
       c_api.release_clip(clip);
       c_api.delete_env(env);
-      std::cout << "audio samples=" << samples << " ok\n";
+      std::cout << "audio samples=" << samples << " bytes=" << bytes << " hash=" << audio_hash(buffer) << " ok\n";
       return;
     }
   } catch (...) {
@@ -588,7 +598,7 @@ void run_with_cpp_environment(const Options& options, const DynamicLibrary& runt
       clip = nullptr;
       env->DeleteScriptEnvironment();
       AVS_linkage = nullptr;
-      std::cout << "audio samples=" << samples << " ok\n";
+      std::cout << "audio samples=" << samples << " bytes=" << bytes << " hash=" << audio_hash(buffer) << " ok\n";
       return;
     }
   } catch (const AvisynthError& error) {

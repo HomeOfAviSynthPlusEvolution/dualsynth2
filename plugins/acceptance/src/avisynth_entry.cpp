@@ -31,6 +31,20 @@ AVSValue __cdecl create_frame_services_pair(AVSValue args, void*, IScriptEnviron
   const AVSValue calls[] = {args, args};
   return ds::avisynth::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls, env);
 }
+AVSValue __cdecl create_stage_pair(AVSValue args, void*, IScriptEnvironment* env) {
+  const int before = ds::acceptance::live_stage_instances.load();
+  const int fail = args[1].AsInt(-1);
+  const AVSValue first[] = {args[0],AVSValue(fail == 0 ? 9 : 0)};
+  const AVSValue second[] = {args[0],AVSValue(fail == 1 ? 9 : 1)};
+  const AVSValue calls[] = {AVSValue(first,2),AVSValue(second,2)};
+  try {
+    return ds::avisynth::create_video_filter_bundle<ds::acceptance::StageProbeBridge>(calls,env);
+  } catch (...) {
+    if (ds::acceptance::live_stage_instances.load() != before)
+      env->ThrowError("stage bundle rollback leaked instance state");
+    throw;
+  }
+}
 
 void initialize_no_audio(VideoInfo& vi) {
   vi.audio_samples_per_second = 0;
@@ -426,6 +440,18 @@ AVS_Value AVSC_CC c_create_frame_services_pair(AVS_ScriptEnvironment* env, AVS_V
   const AVS_Value calls[] = {args, args};
   return ds::avisynth::c::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls, env);
 }
+AVS_Value AVSC_CC c_create_stage_pair(AVS_ScriptEnvironment* env, AVS_Value args, void*) {
+  const int before = ds::acceptance::live_stage_instances.load();
+  const auto fail_value = avs_array_elt(args,1);
+  const int fail = avs_defined(fail_value) ? avs_as_int(fail_value) : -1;
+  AVS_Value first[] = {avs_array_elt(args,0),avs_new_value_int(fail == 0 ? 9 : 0)};
+  AVS_Value second[] = {avs_array_elt(args,0),avs_new_value_int(fail == 1 ? 9 : 1)};
+  const AVS_Value calls[] = {avs_new_value_array(first,2),avs_new_value_array(second,2)};
+  const auto result = ds::avisynth::c::create_video_filter_bundle<ds::acceptance::StageProbeBridge>(calls,env);
+  if (avs_is_error(result) && ds::acceptance::live_stage_instances.load() != before)
+    return avs_new_value_error("stage bundle rollback leaked instance state");
+  return result;
+}
 
 } // namespace
 
@@ -437,6 +463,8 @@ DS_AVS_PLUGIN_EXPORT const char* __stdcall AvisynthPluginInit3(
   AVS_linkage = vectors;
   ds::avisynth::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::register_video_filter<ds::acceptance::StageProbeBridge>(env);
+  ds::avisynth::register_video_filter<ds::acceptance::StageForwardBridge>(env);
+  env->AddFunction("DSStagePair", ".[fail]i",create_stage_pair,nullptr);
   ds::avisynth::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
   env->AddFunction("DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
                    create_frame_services_pair, nullptr);
@@ -490,6 +518,8 @@ DS_AVS_PLUGIN_EXPORT const char* AVSC_CC avisynth_c_plugin_init2(
 ) {
   ds::avisynth::c::register_video_filter<ds::acceptance::ParameterProbeBridge>(env);
   ds::avisynth::c::register_video_filter<ds::acceptance::StageProbeBridge>(env);
+  ds::avisynth::c::register_video_filter<ds::acceptance::StageForwardBridge>(env);
+  ds::avisynth::c::add_function(env,"DSStagePair", ".[fail]i",c_create_stage_pair,nullptr);
   ds::avisynth::c::register_video_filter<ds::acceptance::FrameServicesBridge>(env);
   ds::avisynth::c::add_function(env, "DSFrameServicesPair", ds::acceptance::FrameServicesBridge::avs_signature,
                               c_create_frame_services_pair, nullptr);

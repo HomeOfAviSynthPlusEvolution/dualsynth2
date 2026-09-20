@@ -1,14 +1,21 @@
 #pragma once
 #include <dualsynth/staged_video.hpp>
 #include <dualsynth/video_bridge.hpp>
+#include <atomic>
+#include <memory>
 
 namespace ds::acceptance {
+inline std::atomic<int> live_stage_instances{0};
+struct StageInstanceLifetime {
+  StageInstanceLifetime() { ++live_stage_instances; }
+  ~StageInstanceLifetime() { --live_stage_instances; }
+};
 struct StageProbe {
   static constexpr const char* name = "StageProbe";
   static constexpr int input_count = dynamic_video_inputs;
   static constexpr HostRequirements host_requirements{true,11,0};
   static constexpr OutputOrigin output_origin = OutputOrigin::fresh_without_props();
-  struct State { int mode; };
+  struct State { int mode; std::shared_ptr<StageInstanceLifetime> lifetime; };
   struct RequestState { int phase = 0; int n = -1; int selected = -1; FrameRef current; };
   static Result<VideoInitStateResult<State>> init(VideoInitContext& ctx) {
     if (ctx.inputs.size() != 4) throw std::invalid_argument("StageProbe requires four clips");
@@ -16,8 +23,10 @@ struct StageProbe {
     for (const auto& i : ctx.inputs)
       if (i.width != in.width || i.height != in.height || i.format != in.format || i.num_frames != in.num_frames)
         throw std::invalid_argument("StageProbe requires matching clips");
+    const int mode = ctx.params->get_int("mode",0).value();
+    if (mode == 9) throw std::runtime_error("stage init: original detail");
     return Result<VideoInitStateResult<State>>::success({
-      {in.width,in.height,in.num_frames,in.format,in.fps}, {ctx.params->get_int("mode",0).value()}});
+      {in.width,in.height,in.num_frames,in.format,in.fps}, {mode,std::make_shared<StageInstanceLifetime>()}});
   }
   static Result<VideoStageResult> advance(VideoStageContext& ctx, RequestState& request) {
     const int mode = ctx.state<State>().mode;
@@ -85,5 +94,10 @@ struct StageProbeBridge {
   static FilterDescriptor descriptor() {
     return {"StageProbe",{{"clips",ParamType::Clip,{},true,true},{"mode",ParamType::Integer,0}}};
   }
+};
+struct StageForwardBridge : StageProbeBridge {
+  static constexpr const char* avs_name = "DSStageForward";
+  static constexpr std::size_t parity_source_index = 1;
+  static constexpr bool forward_audio = true;
 };
 } // namespace ds::acceptance

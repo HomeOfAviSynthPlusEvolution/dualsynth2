@@ -5,6 +5,7 @@
 #include <avisynth_c.h>
 #include <dualsynth/avisynth/c/video_bridge.hpp>
 #include <list>
+#include "stage_probe.hpp"
 
 namespace {
 struct ScopedApi {
@@ -336,4 +337,30 @@ TEST_CASE("Property inspection reads metadata without accessing any values", "[f
   }
   CHECK_THROWS_AS(props.inspect(""),std::invalid_argument);
   CHECK_THROWS_AS(props.inspect(std::string("a\0b",3)),std::invalid_argument);
+}
+
+namespace {
+void AVSC_CC ownership_copy(AVS_Value*, AVS_Value) { FAIL("must reject before copying values"); }
+void AVSC_CC ownership_release(AVS_Value) { FAIL("must not create values without ownership APIs"); }
+}
+TEST_CASE("AviSynth C bundle creation rejects missing version and ownership APIs", "[avs_bundle]") {
+  ScopedApi restore;
+  auto& api = ds::avisynth::c::CApi::instance();
+  api.save_string = test_save_string;
+  auto check = [&] {
+    const auto value = ds::avisynth::c::create_video_filter_bundle<ds::acceptance::StageProbeBridge>({},nullptr);
+    REQUIRE(avs_is_error(value));
+    CHECK(std::string(avs_as_error(value)) ==
+      "DualSynth: clip arrays require AviSynth interface 11 and value ownership APIs");
+    CHECK(ds::acceptance::live_stage_instances.load() == 0);
+  };
+  check();
+  api.check_version = test_check_version;
+  check();
+  api.release_value = ownership_release;
+  check();
+  api.release_value = nullptr;
+  api.copy_value = ownership_copy;
+  check();
+  saved_errors.clear();
 }
