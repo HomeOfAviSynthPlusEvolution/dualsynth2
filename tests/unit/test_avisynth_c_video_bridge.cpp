@@ -302,3 +302,38 @@ TEST_CASE("AviSynth C validates all scalar and array element types before readin
   CHECK_THROWS_WITH(arrays.as_bool_array(0), "element[0]: expected boolean");
   CHECK_THROWS_WITH(arrays.as_string_array(0), "element[0]: expected string");
 }
+
+namespace {
+int inspect_count = 0;
+char inspect_type = 'i';
+const AVS_Map* AVSC_CC metadata_props(AVS_ScriptEnvironment*, const AVS_VideoFrame*) { return nullptr; }
+int AVSC_CC metadata_count(AVS_ScriptEnvironment*, const AVS_Map*, const char*) { return inspect_count; }
+char AVSC_CC metadata_type(AVS_ScriptEnvironment*, const AVS_Map*, const char*) { return inspect_type; }
+}
+TEST_CASE("Property inspection reads metadata without accessing any values", "[frame_services]") {
+  ScopedApi restore;
+  auto& api = ds::avisynth::c::CApi::instance();
+  api.get_frame_props_ro = metadata_props;
+  api.prop_num_elements = metadata_count;
+  api.prop_get_type = metadata_type;
+  // All element getters stay null: inspection must never call them.
+  AVS_VideoFrame* frame = nullptr;
+  ds::avisynth::c::FrameTraits traits{nullptr,&api};
+  ds::detail::NativeProperties<ds::avisynth::c::FrameTraits> props(traits,frame,false);
+  inspect_count = -1;
+  CHECK_FALSE(props.inspect("missing"));
+  for (auto count : {0,1,17}) {
+    inspect_count = count;
+    for (auto item : {std::pair{'i',ds::PropertyType::Integer}, {'f',ds::PropertyType::Float},
+                     {'s',ds::PropertyType::Data}, {'v',ds::PropertyType::VideoFrame},
+                     {'c',ds::PropertyType::VideoNode}, {'?',ds::PropertyType::Unknown}}) {
+      inspect_type = item.first;
+      auto info = props.inspect("key");
+      REQUIRE(info.has_value());
+      CHECK(info->type == item.second);
+      CHECK(info->count == static_cast<std::size_t>(count));
+    }
+  }
+  CHECK_THROWS_AS(props.inspect(""),std::invalid_argument);
+  CHECK_THROWS_AS(props.inspect(std::string("a\0b",3)),std::invalid_argument);
+}

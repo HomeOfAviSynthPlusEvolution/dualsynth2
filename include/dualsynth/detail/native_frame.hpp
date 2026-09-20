@@ -21,6 +21,24 @@ public:
     for (int i = 0; i < count; ++i) result.emplace_back(traits_.key(map, i));
     return result;
   }
+  std::optional<PropertyInfo> inspect(const std::string& name) const override {
+    validate_key(name);
+    const auto* map = traits_.props(frame_);
+    const int count = traits_.count(map, name.c_str());
+    if (count < 0) return std::nullopt;
+    PropertyType type = PropertyType::Unknown;
+    switch (traits_.type(map, name.c_str())) {
+      case 'i': type = PropertyType::Integer; break;
+      case 'f': type = PropertyType::Float; break;
+      case 's': type = PropertyType::Data; break;
+      case 'v': type = PropertyType::VideoFrame; break;
+      case 'a': type = PropertyType::AudioFrame; break;
+      case 'c': type = PropertyType::VideoNode; break;
+      case 'n': type = PropertyType::AudioNode; break;
+      case 'm': type = PropertyType::Function; break;
+    }
+    return PropertyInfo{type, static_cast<std::size_t>(count)};
+  }
   std::optional<PropertyValue> find(const std::string& name) const override {
     validate_key(name);
     const auto* map = traits_.props(frame_);

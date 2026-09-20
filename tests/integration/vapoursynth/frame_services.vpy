@@ -16,6 +16,7 @@ formats += [core.query_video_format(vs.GRAY, vs.INTEGER, bits, 0, 0).id for bits
 for fmt in formats:
     src = core.std.BlankClip(width=16, height=8, length=4, format=fmt)
     src = core.std.ModifyFrame(src, src, stamp)
+    src = core.std.SetFrameProps(src, OpaqueNode=core.std.BlankClip(src))
     for failing, index in ((core.dsref.FrameServicesFailedFirst, 0), (core.dsref.FrameServicesFailedPair, 1)):
         try:
             failing(clips=[src])

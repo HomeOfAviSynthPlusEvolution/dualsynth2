@@ -156,7 +156,7 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
   set(DS_AVISYNTH_TEST_SCRIPT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration/avisynth")
   file(GENERATE
     OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs"
-    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\nsrc = DSTestPattern(16, 8)\nproduced = DSFrameServices([src, src], extra=src)\nreturn DSFrameServices([produced], verify=true)\n")
+    CONTENT "LoadPlugin(\"$<TARGET_FILE:dualsynth_acceptance>\")\nsrc = DSTestPattern(16, 8)\nsrc = propSet(src, \"OpaqueNode\", BlankClip(width=16, height=8, length=3, pixel_type=\"Y8\"))\nproduced = DSFrameServices([src, src], extra=src)\nreturn DSFrameServices([produced], verify=true)\n")
   add_test(NAME avs_c_frame_services COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
     --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/frame_services.avs" --backend c --frame 5 --expect-y8-sum 1664)
   if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")

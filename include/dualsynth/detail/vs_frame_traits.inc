@@ -18,7 +18,12 @@ struct FrameTraits {
   const Map* props(const Frame& f) const { return api->getFramePropertiesRO(f); }
   Map* props_rw(const Frame& f) const { return api->getFramePropertiesRW(const_cast<VSFrame*>(f)); }
   char type(const Map* m, const char* k) const {
-    switch (api->mapGetType(m,k)) { case ptInt: return 'i'; case ptFloat: return 'f'; case ptData: return 's'; case ptVideoFrame: return 'v'; default: return '?'; }
+    switch (api->mapGetType(m,k)) {
+      case ptInt: return 'i'; case ptFloat: return 'f'; case ptData: return 's';
+      case ptVideoFrame: return 'v'; case ptAudioFrame: return 'a';
+      case ptVideoNode: return 'c'; case ptAudioNode: return 'n';
+      case ptFunction: return 'm'; default: return '?';
+    }
   }
   Frame get_frame(const Map* m, const char* k, int i, int* e) const { return api->mapGetFrame(m,k,i,e); }
   Frame allocate(VideoFormat fmt, int w, int h, const Frame& props) const {

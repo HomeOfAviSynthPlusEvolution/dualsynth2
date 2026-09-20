@@ -234,3 +234,30 @@ TEST_CASE("VS output metadata rejects invalid geometry and timing", "[video_timi
     CHECK_THROWS_WITH(ds::vapoursynth::validate_output_video_info(test), "DualSynth: VapourSynth output frame count must be positive");
   }
 }
+
+namespace {
+int metadata_vs_type;
+int VS_CC metadata_vs_count(const VSMap*, const char*) noexcept { return 2; }
+int VS_CC metadata_vs_get_type(const VSMap*, const char*) noexcept { return metadata_vs_type; }
+const VSMap* VS_CC metadata_vs_props(const VSFrame*) noexcept { return nullptr; }
+}
+TEST_CASE("VS metadata retains categories of unreadable host objects", "[frame_services]") {
+  VSAPI api{};
+  api.getFramePropertiesRO = metadata_vs_props;
+  api.mapNumElements = metadata_vs_count;
+  api.mapGetType = metadata_vs_get_type;
+  const VSFrame* frame = nullptr;
+  ds::vapoursynth::FrameTraits traits{&api,nullptr};
+  ds::detail::NativeProperties<ds::vapoursynth::FrameTraits> props(traits,frame,false);
+  for (auto item : {std::pair{ptVideoNode,ds::PropertyType::VideoNode},
+                   {ptAudioNode,ds::PropertyType::AudioNode},
+                   {ptAudioFrame,ds::PropertyType::AudioFrame},
+                   {ptFunction,ds::PropertyType::Function}}) {
+    metadata_vs_type = item.first;
+    const auto info = props.inspect("opaque");
+    REQUIRE(info.has_value());
+    CHECK(info->type == item.second);
+    CHECK(info->count == 2);
+    CHECK_THROWS_AS(props.find("opaque"),std::invalid_argument);
+  }
+}

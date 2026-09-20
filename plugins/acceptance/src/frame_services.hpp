@@ -36,6 +36,19 @@ struct FrameServices {
   static void verify(const VideoFrameView& view) {
     check(view.properties != nullptr, "missing properties");
     const auto& props = *view.properties;
+    const auto ints = props.inspect("DS_Ints");
+    check(ints && ints->type == PropertyType::Integer && ints->count == 3, "integer metadata");
+    const auto empty = props.inspect("DS_Empty");
+    check(empty && empty->type == PropertyType::Integer && empty->count == 0, "empty metadata");
+    const auto frames = props.inspect("DS_Frames");
+    check(frames && frames->type == PropertyType::VideoFrame && frames->count == 2, "frame metadata");
+    check(!props.inspect("DS_Deleted"), "missing metadata");
+    if (auto opaque = props.inspect("OpaqueNode")) {
+      check(opaque->type == PropertyType::VideoNode && opaque->count == 1, "opaque node metadata");
+      bool rejected = false;
+      try { props.find("OpaqueNode"); } catch (const std::invalid_argument&) { rejected = true; }
+      check(rejected, "opaque node should not be materialized");
+    }
     check(get<std::int64_t>(props,"DS_Ints") == std::vector<std::int64_t>{INT64_MIN,INT64_MAX,9007199254740993LL}, "integer precision");
     auto floats = get<double>(props,"DS_Floats");
     const double expected[] = {0.0,-0.0,1.0 / 8.0};

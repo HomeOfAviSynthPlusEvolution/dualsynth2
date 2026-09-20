@@ -34,12 +34,22 @@ struct PropertyData {
 using PropertyValue = std::variant<std::vector<std::int64_t>, std::vector<double>,
                                   std::vector<PropertyData>, std::vector<FrameRef>>;
 
+enum class PropertyType { Unknown, Integer, Float, Data, VideoFrame, AudioFrame,
+                          VideoNode, AudioNode, Function };
+struct PropertyInfo {
+  PropertyType type = PropertyType::Unknown;
+  std::size_t count = 0;
+};
+
 // Reads return owning snapshots. No numeric conversion, string truncation or
 // normalization is performed. Missing keys return nullopt; invalid types throw.
 class FrameProperties {
 public:
   virtual ~FrameProperties() = default;
   virtual std::vector<std::string> keys() const = 0;
+  // Metadata only: nullopt means missing; count == 0 means a typed empty array.
+  // No property values or host object references are acquired by this query.
+  virtual std::optional<PropertyInfo> inspect(const std::string& key) const = 0;
   virtual std::optional<PropertyValue> find(const std::string& key) const = 0;
   virtual void set(const std::string& key, const PropertyValue& value) = 0;
   virtual bool erase(const std::string& key) = 0;
