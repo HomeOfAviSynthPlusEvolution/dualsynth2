@@ -16,6 +16,7 @@
 #include <dualsynth/avisynth/params.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
+#include <dualsynth/staged_video.hpp>
 
 #include <algorithm>
 #include <array>
@@ -803,8 +804,9 @@ public:
     const auto index = static_cast<std::size_t>(input_index);
     AVS_VideoFrame* frame = api.get_frame(clips_[index], frame_number);
     if (!frame) {
+      const char* error = api.clip_get_error ? api.clip_get_error(clips_[index]) : nullptr;
       return Result<RequestedVideoFrame>::failure(
-        Error{ErrorCode::HostError, "DualSynth C: AviSynth did not provide the requested frame"}
+        Error{ErrorCode::HostError, error ? error : "DualSynth C: AviSynth did not provide the requested frame"}
       );
     }
 
@@ -985,6 +987,16 @@ AVS_VideoFrame* AVSC_CC c_filter_get_frame(AVS_FilterInfo* fi, int n) {
   auto& api = CApi::instance();
   fi->error = nullptr;
   try {
+    if constexpr (HasVideoStages<Filter>::value) {
+      CVideoFrameProvider<input_count> provider(holder->clips,holder->input_infos,fi->env,true);
+      StagedVideoRequest<Filter> request(n,holder->state);
+      acquire_video_stages(request,provider,holder->input_infos,holder->state);
+      FrameTraits traits{fi->env,&api};
+      detail::NativeFrameFactory<FrameTraits> factory(traits);
+      auto frame = request.finish({holder->vi.width,holder->vi.height,holder->vi.num_frames,holder->output_format,{}},
+                                  holder->input_infos,holder->state,factory);
+      return traits.clone(dynamic_cast<const detail::NativeFrame<FrameTraits>&>(frame.storage()).frame());
+    } else {
     const auto origin = resolve_output_origin<Filter>(n, holder->state);
     if (!output_origin_matches(origin, VideoOutputInfo{holder->vi.width,holder->vi.height,holder->vi.num_frames,holder->output_format,{}}, holder->input_infos))
       throw std::invalid_argument("DualSynth: invalid output origin");
@@ -1013,6 +1025,7 @@ AVS_VideoFrame* AVSC_CC c_filter_get_frame(AVS_FilterInfo* fi, int n) {
       FilterRequirements<Filter>::value.frame_services ? &factory : nullptr);
     if (!result.has_value()) throw std::runtime_error(result.error().message);
     return output.release();
+    }
   } catch (const std::exception& error) {
     fi->error = save_error(fi->env,error.what());
   } catch (...) {

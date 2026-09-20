@@ -1,0 +1,13 @@
+LoadPlugin("@PLUGIN@")
+base = BlankClip(width=16, height=8, length=8, pixel_type="Y8", color_yuv=$070707)
+src = base.ScriptClip("""
+propSet(last, "Stamp", current_frame)
+""")
+vectors = base.ScriptClip("""
+propSet(last, "Select", current_frame % 2)
+""")
+a = BlankClip(base, color_yuv=$111111)
+b = BlankClip(base, color_yuv=$1F1F1F)
+a = DSStageProbe([a,a,a,a],mode=6)
+b = DSStageProbe([b,b,b,b],mode=7)
+return DSStageProbe([src,vectors,a,b]).Prefetch(4)

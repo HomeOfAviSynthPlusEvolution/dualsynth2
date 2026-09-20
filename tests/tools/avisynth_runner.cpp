@@ -1,3 +1,7 @@
+#if defined(_MSC_VER)
+#include <avisynth.h>
+const AVS_Linkage* AVS_linkage = nullptr;
+#endif
 #include <avisynth_c.h>
 
 #include <array>
@@ -160,6 +164,7 @@ struct CApiRunner {
   avs_release_value_fn release_value{nullptr};
   avs_get_video_info_fn get_video_info{nullptr};
   avs_get_frame_fn get_frame{nullptr};
+  decltype(&avs_clip_get_error) clip_get_error{nullptr};
   avs_release_video_frame_fn release_video_frame{nullptr};
   avs_get_read_ptr_p_fn get_read_ptr_p{nullptr};
   avs_get_pitch_p_fn get_pitch_p{nullptr};
@@ -177,6 +182,7 @@ struct CApiRunner {
     release_value = lib.symbol<avs_release_value_fn>("avs_release_value");
     get_video_info = lib.symbol<avs_get_video_info_fn>("avs_get_video_info");
     get_frame = lib.symbol<avs_get_frame_fn>("avs_get_frame");
+    clip_get_error = lib.symbol<decltype(clip_get_error)>("avs_clip_get_error");
     release_video_frame = lib.symbol<avs_release_video_frame_fn>("avs_release_video_frame");
     get_read_ptr_p = lib.symbol<avs_get_read_ptr_p_fn>("avs_get_read_ptr_p");
     get_pitch_p = lib.symbol<avs_get_pitch_p_fn>("avs_get_pitch_p");
@@ -408,8 +414,10 @@ void run_with_c_environment(const Options& options, const DynamicLibrary& runtim
       }
       AVS_VideoFrame* frame = c_api.get_frame(clip, options.frame);
       if (!frame) {
+        const char* native_error = c_api.clip_get_error(clip);
+        const std::string error = native_error ? native_error : "get_frame returned null";
         c_api.release_clip(clip);
-        throw std::runtime_error("get_frame returned null");
+        throw std::runtime_error(error);
       }
       if (options.expect_y8_sum.has_value()) {
         const BYTE* src = c_api.get_read_ptr_p(frame, AVS_PLANAR_Y);
@@ -465,9 +473,6 @@ void run_with_c_environment(const Options& options, const DynamicLibrary& runtim
 }
 
 #if defined(_MSC_VER)
-#include <avisynth.h>
-const AVS_Linkage* AVS_linkage = nullptr;
-
 using CreateScriptEnvironmentFn = IScriptEnvironment*(__stdcall *)(int);
 
 PClip import_clip_cpp(IScriptEnvironment* env, const std::filesystem::path& script) {
@@ -586,6 +591,11 @@ void run_with_cpp_environment(const Options& options, const DynamicLibrary& runt
       std::cout << "audio samples=" << samples << " ok\n";
       return;
     }
+  } catch (const AvisynthError& error) {
+    const std::string message = error.msg ? error.msg : "AviSynth error";
+    env->DeleteScriptEnvironment();
+    AVS_linkage = nullptr;
+    throw std::runtime_error(message);
   } catch (...) {
     env->DeleteScriptEnvironment();
     AVS_linkage = nullptr;

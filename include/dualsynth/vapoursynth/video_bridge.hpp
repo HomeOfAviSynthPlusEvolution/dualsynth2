@@ -8,6 +8,7 @@
 #include <dualsynth/param.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
+#include <dualsynth/staged_video.hpp>
 
 #include <array>
 #include <cstddef>
@@ -401,12 +402,63 @@ const VSFrame* execute_process_frame(
 }
 
 template <class Bridge>
+const VSFrame* staged_video_filter_get_frame(
+  int n, int activation, VideoFilterData<Bridge>* data, void** frame_data,
+  VSFrameContext* frame_ctx, VSCore* core, const VSAPI* api
+) {
+  using Filter = typename Bridge::Core;
+  using Request = StagedVideoRequest<Filter>;
+  if (activation == arError) {
+    delete static_cast<Request*>(*frame_data);
+    *frame_data = nullptr;
+    return nullptr; // Preserve the host's original upstream error.
+  }
+  if (activation != arInitial && activation != arAllFramesReady) return nullptr;
+  std::unique_ptr<Request> request;
+  try {
+    FrameTraits traits{api,core};
+    if (activation == arInitial) {
+      request = std::make_unique<Request>(n,data->state);
+    } else {
+      request.reset(static_cast<Request*>(*frame_data));
+      *frame_data = nullptr;
+      if (!request) throw std::logic_error("DualSynth: missing staged request");
+      for (const auto& r : request->pending()) {
+        const auto* native = api->getFrameFilter(r.frame_number,data->nodes[r.input_index],frame_ctx);
+        if (!native) throw std::runtime_error("DualSynth: staged frame was not provided");
+        auto owner = detail::NativeFrame<FrameTraits>::adopt(traits,native);
+        auto view = owner.view();
+        request->accept({r.input_index,r.frame_number,view,std::move(owner)});
+      }
+    }
+    if (!request->advance(data->input_infos,data->state)) {
+      for (const auto& r : request->pending())
+        api->requestFrameFilter(r.frame_number,data->nodes[r.input_index],frame_ctx);
+      *frame_data = request.release();
+      return nullptr;
+    }
+    detail::NativeFrameFactory<FrameTraits> factory(traits);
+    const auto& vi = data->video_info;
+    auto frame = request->finish({vi.width,vi.height,vi.numFrames,data->output_format,{}},data->input_infos,data->state,factory);
+    return traits.clone(dynamic_cast<const detail::NativeFrame<FrameTraits>&>(frame.storage()).frame());
+  } catch (const std::exception& error) {
+    api->setFilterError(error.what(),frame_ctx);
+  } catch (...) {
+    api->setFilterError("DualSynth: unhandled exception in staged video filter",frame_ctx);
+  }
+  return nullptr;
+}
+
+template <class Bridge>
 const VSFrame* VS_CC video_filter_get_frame(
   int n, int activation_reason, void* instance_data, void** frame_data,
   VSFrameContext* frame_ctx, VSCore* core, const VSAPI* vsapi
 ) {
   using Filter = typename Bridge::Core;
   auto* data = static_cast<VideoFilterData<Bridge>*>(instance_data);
+  if constexpr (HasVideoStages<Filter>::value) {
+    return staged_video_filter_get_frame<Bridge>(n,activation_reason,data,frame_data,frame_ctx,core,vsapi);
+  } else {
   if (activation_reason == arError) {
     delete static_cast<VideoRequestPlan*>(*frame_data);
     *frame_data = nullptr;
@@ -455,6 +507,7 @@ const VSFrame* VS_CC video_filter_get_frame(
     vsapi->setFilterError("DualSynth: unhandled exception in VapourSynth video wrapper", frame_ctx);
   }
   return nullptr;
+  }
 }
 
 template <class Bridge>

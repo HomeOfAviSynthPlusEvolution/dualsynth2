@@ -377,3 +377,42 @@ if(WIN32 AND DS_ENABLE_AVISYNTH AND DS_ENABLE_VAPOURSYNTH AND
     message(STATUS "DS2 cross-host differential test unavailable: Python3 interpreter not found")
   endif()
 endif()
+
+if(DS_ENABLE_VAPOURSYNTH AND TARGET dualsynth_acceptance AND DS_VSPIPE_EXECUTABLE)
+  add_test(NAME vs_staged_video COMMAND ${DS_VSPIPE_EXECUTABLE}
+    --arg plugin=$<TARGET_FILE:dualsynth_acceptance>
+    ${CMAKE_CURRENT_SOURCE_DIR}/integration/vapoursynth/staged_video.vpy --)
+  set_tests_properties(vs_staged_video PROPERTIES PROCESSORS 4 FAIL_REGULAR_EXPRESSION "Core freed but")
+endif()
+if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/staged_video.avs.in")
+  file(READ "${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/staged_video.avs.in" DS_STAGE_SCRIPT)
+  string(REPLACE "@PLUGIN@" "$<TARGET_FILE:dualsynth_acceptance>" DS_STAGE_SCRIPT "${DS_STAGE_SCRIPT}")
+  file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video.avs" CONTENT "${DS_STAGE_SCRIPT}")
+  add_test(NAME avs_c_staged_video COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video.avs" --backend c --frame 7 --expect-y8-sum 3968)
+  set_tests_properties(avs_c_staged_video PROPERTIES PROCESSORS 4)
+  if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    add_test(NAME avs_cpp_staged_video COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
+      --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video.avs" --backend cpp --frame 7 --expect-y8-sum 3968)
+    set_tests_properties(avs_cpp_staged_video PROPERTIES PROCESSORS 4)
+  endif()
+endif()
+
+if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisynth_runner)
+  find_package(Python3 QUIET COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    set(DS_STAGE_BACKENDS c)
+    if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+      list(APPEND DS_STAGE_BACKENDS cpp)
+    endif()
+    foreach(backend IN LISTS DS_STAGE_BACKENDS)
+      add_test(NAME avs_${backend}_staged_faults COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/staged_faults.py
+        --runner $<TARGET_FILE:dualsynth_avisynth_runner> --plugin $<TARGET_FILE:dualsynth_acceptance>
+        --backend ${backend} --work ${CMAKE_CURRENT_BINARY_DIR}/staged-faults-${backend})
+      set_tests_properties(avs_${backend}_staged_faults PROPERTIES PROCESSORS 4)
+    endforeach()
+  endif()
+endif()

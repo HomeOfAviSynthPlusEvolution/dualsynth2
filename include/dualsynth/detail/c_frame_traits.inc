@@ -54,7 +54,7 @@ void check_host_requirements(AVS_ScriptEnvironment* env) {
        api.get_env_property(env, AVS_AEP_INTERFACE_BUGFIX) < static_cast<std::size_t>(req.avisynth_bugfix))))
     throw std::runtime_error("DualSynth: AviSynth interface bugfix level is too old");
   if constexpr (req.frame_services) {
-    if (!api.prop_num_keys ||
+    if (!api.clip_get_error || !api.prop_num_keys ||
         !api.prop_get_key ||
         !api.prop_num_elements ||
         !api.prop_get_int ||

@@ -12,6 +12,7 @@
 #include <dualsynth/param.hpp>
 #include <dualsynth/video_bridge.hpp>
 #include <dualsynth/video_filter.hpp>
+#include <dualsynth/staged_video.hpp>
 
 #include <algorithm>
 #include <array>
@@ -649,6 +650,15 @@ public:
 
   PVideoFrame __stdcall GetFrame(int n, IScriptEnvironment* env) override {
     try {
+      if constexpr (HasVideoStages<Filter>::value) {
+        VideoFrameProvider<input_count> provider(clips_,input_infos_,env,true);
+        StagedVideoRequest<Filter> request(n,state_);
+        acquire_video_stages(request,provider,input_infos_,state_);
+        FrameTraits traits{env};
+        detail::NativeFrameFactory<FrameTraits> factory(traits);
+        auto frame = request.finish({vi_.width,vi_.height,vi_.num_frames,output_format_,{}},input_infos_,state_,factory);
+        return traits.clone(dynamic_cast<const detail::NativeFrame<FrameTraits>&>(frame.storage()).frame());
+      } else {
       PVideoFrame dst = new_output_frame(n, env);
       VideoFrameProvider<input_count> provider(clips_, input_infos_, env, FilterRequirements<Filter>::value.frame_services);
       FrameTraits traits{env};
@@ -669,6 +679,7 @@ public:
       }
 
       return dst;
+      }
     } catch (const AvisynthError&) {
       throw;
     } catch (const std::exception& error) {
