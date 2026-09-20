@@ -10,8 +10,8 @@ TEST_CASE("span2d Row provides lightweight 1D continuous row slicing") {
   std::vector<std::uint8_t> buffer = {10, 20, 30, 40, 50};
   span2d::Row<std::uint8_t> row(buffer.data(), buffer.size());
 
-  STATIC_REQUIRE(sizeof(span2d::Row<std::uint8_t>) == 16);
-  STATIC_REQUIRE(sizeof(span2d::Row<const std::uint8_t>) == 16);
+  STATIC_REQUIRE(sizeof(span2d::Row<std::uint8_t>) == 2 * sizeof(void*));
+  STATIC_REQUIRE(sizeof(span2d::Row<const std::uint8_t>) == 2 * sizeof(void*));
   STATIC_REQUIRE_FALSE(span2d::Row<std::uint8_t>::is_restrict);
 
   REQUIRE(row.size() == 5);
@@ -57,10 +57,10 @@ TEST_CASE("span2d Plane indexes stride-backed 2D planes and extracts rows") {
     }
   }
 
-  span2d::Plane<std::uint16_t> plane(buffer.data(), width, height, stride_elements);
+  span2d::Plane<std::uint16_t> plane(buffer.data(), width, height, stride_elements * sizeof(buffer[0]));
 
-  STATIC_REQUIRE(sizeof(span2d::Plane<std::uint16_t>) == 24);
-  STATIC_REQUIRE(sizeof(span2d::Plane<const std::uint16_t>) == 24);
+  STATIC_REQUIRE(sizeof(span2d::Plane<std::uint16_t>) == (sizeof(void*) == 8 ? 24 : 16));
+  STATIC_REQUIRE(sizeof(span2d::Plane<const std::uint16_t>) == (sizeof(void*) == 8 ? 24 : 16));
   STATIC_REQUIRE_FALSE(span2d::Plane<std::uint16_t>::is_restrict);
 
   REQUIRE(plane.width() == width);
@@ -113,10 +113,10 @@ TEST_CASE("span2d RowCursor steps through scanlines and supports relative peekin
     }
   }
 
-  span2d::Plane<std::int32_t> plane(buffer.data(), width, height, stride_elements);
+  span2d::Plane<std::int32_t> plane(buffer.data(), width, height, stride_elements * sizeof(buffer[0]));
 
-  STATIC_REQUIRE(sizeof(span2d::RowCursor<std::int32_t>) == 16);
-  STATIC_REQUIRE(sizeof(span2d::RowCursor<const std::int32_t>) == 16);
+  STATIC_REQUIRE(sizeof(span2d::RowCursor<std::int32_t>) == sizeof(void*) + 2 * sizeof(std::int32_t));
+  STATIC_REQUIRE(sizeof(span2d::RowCursor<const std::int32_t>) == sizeof(void*) + 2 * sizeof(std::int32_t));
   STATIC_REQUIRE_FALSE(span2d::RowCursor<std::int32_t>::is_restrict);
 
   auto cur = plane.cursor();
@@ -158,9 +158,9 @@ TEST_CASE("span2d Restrict views and explicit conversion methods work seamlessly
   std::vector<std::uint8_t> buffer = {1, 2, 3, 4, 5, 6, 7, 8};
   span2d::Plane<std::uint8_t> plane(buffer.data(), 4, 2, 4);
 
-  STATIC_REQUIRE(sizeof(span2d::RestrictPlane<std::uint8_t>) == 24);
-  STATIC_REQUIRE(sizeof(span2d::RestrictRow<std::uint8_t>) == 16);
-  STATIC_REQUIRE(sizeof(span2d::RestrictRowCursor<std::uint8_t>) == 16);
+  STATIC_REQUIRE(sizeof(span2d::RestrictPlane<std::uint8_t>) == (sizeof(void*) == 8 ? 24 : 16));
+  STATIC_REQUIRE(sizeof(span2d::RestrictRow<std::uint8_t>) == 2 * sizeof(void*));
+  STATIC_REQUIRE(sizeof(span2d::RestrictRowCursor<std::uint8_t>) == sizeof(void*) + 2 * sizeof(std::int32_t));
 
   STATIC_REQUIRE(span2d::RestrictPlane<std::uint8_t>::is_restrict);
   STATIC_REQUIRE(span2d::RestrictRow<std::uint8_t>::is_restrict);
@@ -247,4 +247,35 @@ TEST_CASE("span2d factory functions and ds namespace aliases work properly") {
   auto rr = ds::make_restrict_row(buffer.data(), buffer.size());
   STATIC_REQUIRE(std::is_same_v<decltype(rr), ds::RestrictRow<std::uint8_t>>);
   REQUIRE(rr[5] == 42);
+}
+
+TEST_CASE("Plane constructors always interpret integer strides as bytes") {
+  std::array<std::uint16_t, 24> buffer{};
+  const int pitch = 16;
+  const std::ptrdiff_t wide_pitch = pitch;
+  span2d::Plane<std::uint16_t> plane(buffer.data(), 4, 3, pitch);
+  span2d::Plane<std::uint16_t> wide(buffer.data(), 4, 3, wide_pitch);
+  auto factory = span2d::make_plane(buffer.data(), 4, 3, pitch);
+  auto restricted = plane.as_restrict();
+  auto unrestricted = restricted.as_unrestricted();
+  span2d::Plane<const std::uint16_t> readonly = plane;
+  for (int y = 0; y < 3; ++y) {
+    CHECK(plane.row_ptr(y) == buffer.data() + y * 8);
+    CHECK(wide.row_ptr(y) == plane.row_ptr(y));
+    CHECK(factory.row_ptr(y) == plane.row_ptr(y));
+    CHECK(restricted.row_ptr(y) == plane.row_ptr(y));
+    CHECK(unrestricted.row_ptr(y) == plane.row_ptr(y));
+    CHECK(readonly.row_ptr(y) == plane.row_ptr(y));
+  }
+  CHECK(plane.stride() == 8);
+  CHECK(plane.stride_bytes() == pitch);
+  span2d::RowCursor<std::uint16_t> cursor(buffer.data(), 4, plane.stride_bytes());
+  CHECK((++cursor).ptr() == plane.row_ptr(1));
+  auto rc = cursor.as_restrict();
+  CHECK((++rc).ptr() == plane.row_ptr(2));
+  auto uc = rc.as_unrestricted();
+  CHECK((--uc).ptr() == plane.row_ptr(1));
+  auto sub = plane.subplane(1, 1, 2, 2);
+  CHECK(sub.row_ptr(1) == buffer.data() + 17);
+  CHECK(sub.stride_bytes() == pitch);
 }

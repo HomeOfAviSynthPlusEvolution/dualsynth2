@@ -121,8 +121,10 @@ public:
   static constexpr bool is_restrict = IsRestrict;
 
   constexpr BasicRowCursor() noexcept = default;
-  constexpr BasicRowCursor(pointer data, size_type width, difference_type stride_elements) noexcept
-    : ptr_(data), width_(width), stride_(stride_elements) {}
+  // Public construction takes bytes, like BasicPlane.
+  constexpr BasicRowCursor(pointer data, size_type width, std::ptrdiff_t stride_bytes) noexcept
+    : ptr_(data), width_(width),
+      stride_(static_cast<difference_type>(stride_bytes / static_cast<std::ptrdiff_t>(sizeof(T)))) {}
 
   template <class U, bool OtherRestrict,
             typename = std::enable_if_t<std::is_same<const U, T>::value && (OtherRestrict == IsRestrict)>>
@@ -132,6 +134,7 @@ public:
   [[nodiscard]] constexpr pointer ptr() const noexcept { return ptr_; }
   [[nodiscard]] constexpr size_type width() const noexcept { return width_; }
   [[nodiscard]] constexpr difference_type stride() const noexcept { return stride_; }
+  [[nodiscard]] constexpr std::ptrdiff_t stride_bytes() const noexcept { return static_cast<std::ptrdiff_t>(stride_) * static_cast<std::ptrdiff_t>(sizeof(T)); }
 
   [[nodiscard]] SPAN2D_FORCEINLINE row_type row() const noexcept {
     return row_type(ptr_, static_cast<std::size_t>(width_));
@@ -192,11 +195,11 @@ public:
 
   // Converters
   [[nodiscard]] SPAN2D_FORCEINLINE BasicRowCursor<T, true> as_restrict() const noexcept {
-    return BasicRowCursor<T, true>(ptr_, width_, stride_);
+    return BasicRowCursor<T, true>(ptr_, width_, stride_bytes());
   }
 
   [[nodiscard]] SPAN2D_FORCEINLINE BasicRowCursor<T, false> as_unrestricted() const noexcept {
-    return BasicRowCursor<T, false>(ptr_, width_, stride_);
+    return BasicRowCursor<T, false>(ptr_, width_, stride_bytes());
   }
 
 private:
@@ -226,12 +229,10 @@ public:
 
   constexpr BasicPlane() noexcept = default;
 
-  constexpr BasicPlane(pointer data, size_type width, size_type height, difference_type stride_elements) noexcept
-    : data_(data), width_(width), height_(height), stride_(stride_elements) {}
-
+  // Construction always takes bytes, independent of integer width/platform.
   constexpr BasicPlane(pointer data, size_type width, size_type height, std::ptrdiff_t stride_bytes) noexcept
     : data_(data), width_(width), height_(height),
-      stride_(static_cast<difference_type>(stride_bytes / sizeof(T))) {}
+      stride_(static_cast<difference_type>(stride_bytes / static_cast<std::ptrdiff_t>(sizeof(T)))) {}
 
   template <class U, bool OtherRestrict,
             typename = std::enable_if_t<std::is_same<const U, T>::value && (OtherRestrict == IsRestrict)>>
@@ -242,7 +243,7 @@ public:
   [[nodiscard]] constexpr size_type width() const noexcept { return width_; }
   [[nodiscard]] constexpr size_type height() const noexcept { return height_; }
   [[nodiscard]] constexpr difference_type stride() const noexcept { return stride_; }
-  [[nodiscard]] constexpr std::ptrdiff_t stride_bytes() const noexcept { return stride_ * sizeof(T); }
+  [[nodiscard]] constexpr std::ptrdiff_t stride_bytes() const noexcept { return static_cast<std::ptrdiff_t>(stride_) * static_cast<std::ptrdiff_t>(sizeof(T)); }
   [[nodiscard]] constexpr bool empty() const noexcept { return width_ == 0 || height_ == 0; }
 
   template <class IndexY, class IndexX,
@@ -263,23 +264,23 @@ public:
 
   template <class IndexY = size_type, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
   [[nodiscard]] SPAN2D_FORCEINLINE cursor_type cursor(IndexY y = 0) const noexcept {
-    return cursor_type(row_ptr(y), width_, stride_);
+    return cursor_type(row_ptr(y), width_, stride_bytes());
   }
 
   [[nodiscard]] constexpr cursor_type begin() const noexcept { return cursor(0); }
   [[nodiscard]] constexpr cursor_type end() const noexcept { return cursor(height_); }
 
   [[nodiscard]] constexpr BasicPlane subplane(size_type x, size_type y, size_type w, size_type h) const noexcept {
-    return BasicPlane(data_ + static_cast<std::size_t>(y) * stride_ + x, w, h, stride_);
+    return BasicPlane(data_ + static_cast<std::size_t>(y) * stride_ + x, w, h, stride_bytes());
   }
 
   // Converters
   [[nodiscard]] SPAN2D_FORCEINLINE BasicPlane<T, true> as_restrict() const noexcept {
-    return BasicPlane<T, true>(data_, width_, height_, stride_);
+    return BasicPlane<T, true>(data_, width_, height_, stride_bytes());
   }
 
   [[nodiscard]] SPAN2D_FORCEINLINE BasicPlane<T, false> as_unrestricted() const noexcept {
-    return BasicPlane<T, false>(data_, width_, height_, stride_);
+    return BasicPlane<T, false>(data_, width_, height_, stride_bytes());
   }
 
 private:

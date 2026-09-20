@@ -79,6 +79,20 @@ adding DualSynth.
 
 Write the filter core against the DualSynth C++ API, then provide the VapourSynth and/or AviSynth+ bridge entry points needed by the host.
 
+## Plane strides
+
+`Plane<T>`, `RestrictPlane<T>`, `RowCursor<T>` and their factories take strides
+in **bytes** when constructed. `stride()` reports elements; `stride_bytes()`
+reports bytes. This convention is identical on 32-bit and 64-bit targets.
+
+For example, a `uint16_t` plane with eight elements between rows is constructed
+with `Plane<uint16_t>(data, width, height, 16)`. Existing direct constructor calls
+that supplied element counts must multiply by `sizeof(T)` when updating DS2.
+`make_plane`, `make_restrict_plane` and `as_plane` already used byte strides and
+require no call-site changes. Strides must be divisible by `sizeof(T)` and the
+resulting element count must fit `int32_t`; views do not validate the backing
+allocation. Rebuild consumers with the updated header.
+
 ## License
 
 This project is licensed under the MIT License.
