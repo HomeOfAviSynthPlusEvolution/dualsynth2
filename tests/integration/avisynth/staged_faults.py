@@ -9,6 +9,8 @@ p.add_argument('--backend', required=True)
 p.add_argument('--work', required=True)
 a = p.parse_args()
 base = pathlib.Path(__file__).with_name('staged_video.avs.in').read_text().replace('@PLUGIN@', a.plugin.replace('\\','/'))
+if a.backend == 'c':
+    base = base.replace('LoadPlugin(', 'LoadCPlugin(')
 work = pathlib.Path(a.work)
 work.mkdir(parents=True, exist_ok=True)
 cases = [(1, None), (2, 'stage exception: original detail'), (3, 'stage result: original detail'),

@@ -170,8 +170,11 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
   string(REPLACE "@PLUGIN@" "$<TARGET_FILE:dualsynth_acceptance>" DS_PARAMETER_SCRIPT "${DS_PARAMETER_SCRIPT}")
   file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs"
     CONTENT "${DS_PARAMETER_SCRIPT}")
+  string(REPLACE "LoadPlugin(" "LoadCPlugin(" DS_PARAMETER_C_SCRIPT "${DS_PARAMETER_SCRIPT}")
+  file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding_c.avs"
+    CONTENT "${DS_PARAMETER_C_SCRIPT}")
   add_test(NAME avs_c_parameter_binding COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
-    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs" --backend c --frame 0)
+    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding_c.avs" --backend c --frame 0)
   if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
     add_test(NAME avs_cpp_parameter_binding COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
       --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/parameter_binding.avs" --backend cpp --frame 0)
@@ -390,8 +393,10 @@ if(DS_ENABLE_AVISYNTH AND TARGET dualsynth_acceptance AND TARGET dualsynth_avisy
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/integration/avisynth/staged_video.avs.in" DS_STAGE_SCRIPT)
   string(REPLACE "@PLUGIN@" "$<TARGET_FILE:dualsynth_acceptance>" DS_STAGE_SCRIPT "${DS_STAGE_SCRIPT}")
   file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video.avs" CONTENT "${DS_STAGE_SCRIPT}")
+  string(REPLACE "LoadPlugin(" "LoadCPlugin(" DS_STAGE_C_SCRIPT "${DS_STAGE_SCRIPT}")
+  file(GENERATE OUTPUT "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video_c.avs" CONTENT "${DS_STAGE_C_SCRIPT}")
   add_test(NAME avs_c_staged_video COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
-    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video.avs" --backend c --frame 7 --expect-y8-sum 3968)
+    --video "${DS_AVISYNTH_TEST_SCRIPT_DIR}/$<CONFIG>/staged_video_c.avs" --backend c --frame 7 --expect-y8-sum 3968)
   set_tests_properties(avs_c_staged_video PROPERTIES PROCESSORS 4)
   if(MSVC AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
     add_test(NAME avs_cpp_staged_video COMMAND $<TARGET_FILE:dualsynth_avisynth_runner>
