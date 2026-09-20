@@ -328,6 +328,13 @@ void VS_CC frame_services_pair(const VSMap* in, VSMap* out, void*, VSCore* core,
   ds::vapoursynth::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls,out,core,api);
 }
 
+void VS_CC frame_services_failed_pair(const VSMap* in, VSMap* out, void* first, VSCore* core, const VSAPI* api) {
+  std::unique_ptr<VSMap, decltype(api->freeMap)> invalid(api->createMap(), api->freeMap);
+  if (!invalid) { api->mapSetError(out, "test map allocation failed"); return; }
+  const VSMap* calls[] = {first ? invalid.get() : in, invalid.get()};
+  ds::vapoursynth::create_video_filter_bundle<ds::acceptance::FrameServicesBridge>(calls,out,core,api);
+}
+
 } // namespace
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi) {
@@ -342,6 +349,9 @@ VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI
   );
 
   vspapi->registerFunction("FrameServices",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode;",frame_services_create,nullptr,plugin);
+  static int first_member = 1;
+  vspapi->registerFunction("FrameServicesFailedFirst",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_failed_pair,&first_member,plugin);
+  vspapi->registerFunction("FrameServicesFailedPair",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_failed_pair,nullptr,plugin);
   vspapi->registerFunction("FrameServicesPair",ds::acceptance::FrameServicesBridge::vs_signature,"clip:vnode[];",frame_services_pair,nullptr,plugin);
   vspapi->registerFunction(
     "TestPattern",

@@ -16,6 +16,13 @@ formats += [core.query_video_format(vs.GRAY, vs.INTEGER, bits, 0, 0).id for bits
 for fmt in formats:
     src = core.std.BlankClip(width=16, height=8, length=4, format=fmt)
     src = core.std.ModifyFrame(src, src, stamp)
+    for failing, index in ((core.dsref.FrameServicesFailedFirst, 0), (core.dsref.FrameServicesFailedPair, 1)):
+        try:
+            failing(clips=[src])
+            raise AssertionError("failed bundle returned a partial result")
+        except vs.Error as error:
+            assert f"bundle member[{index}]: FrameServices requires a nonempty clip array" in str(error), str(error)
+    del failing
     pair = core.dsref.FrameServicesPair(clips=[src, src], extra=src)
     assert len(pair) == 2
     out = core.dsref.FrameServices(clips=[pair[0]], verify=True)

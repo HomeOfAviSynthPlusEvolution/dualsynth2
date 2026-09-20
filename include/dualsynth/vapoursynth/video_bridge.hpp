@@ -795,15 +795,21 @@ void create_video_filter_bundle(Span<const VSMap* const> calls, VSMap* out, VSCo
   try {
     std::vector<std::unique_ptr<VSNode, decltype(api->freeNode)>> nodes;
     nodes.reserve(calls.size());
-    for (const auto* args : calls) {
-      std::unique_ptr<VSMap, decltype(api->freeMap)> result(api->createMap(),api->freeMap);
-      if (!result) throw std::bad_alloc();
-      create_video_filter_bridge<Bridge>(args,result.get(),core,api);
-      if (const char* error = api->mapGetError(result.get())) throw std::runtime_error(error);
-      int error = 0;
-      std::unique_ptr<VSNode, decltype(api->freeNode)> node(api->mapGetNode(result.get(),"clip",0,&error),api->freeNode);
-      if (error || !node) throw std::runtime_error("DualSynth: bundle member did not return a clip");
-      nodes.push_back(std::move(node));
+    for (std::size_t index = 0; index < calls.size(); ++index) {
+      try {
+        std::unique_ptr<VSMap, decltype(api->freeMap)> result(api->createMap(),api->freeMap);
+        if (!result) throw std::bad_alloc();
+        create_video_filter_bridge<Bridge>(calls[index],result.get(),core,api);
+        if (const char* error = api->mapGetError(result.get())) throw std::runtime_error(error);
+        int error = 0;
+        std::unique_ptr<VSNode, decltype(api->freeNode)> node(api->mapGetNode(result.get(),"clip",0,&error),api->freeNode);
+        if (error || !node) throw std::runtime_error("DualSynth: bundle member did not return a clip");
+        nodes.push_back(std::move(node));
+      } catch (const std::exception& error) {
+        throw std::runtime_error("DualSynth: bundle member[" + std::to_string(index) + "]: " + error.what());
+      } catch (...) {
+        throw std::runtime_error("DualSynth: bundle member[" + std::to_string(index) + "]: unhandled exception");
+      }
     }
     api->mapDeleteKey(out,"clip");
     if (nodes.empty()) {
