@@ -12,19 +12,29 @@ template<class Filter> struct HasVideoStages<Filter, std::void_t<typename Filter
   : std::true_type {};
 
 enum class VideoStageResult { RequestFrames, Ready };
+struct VideoFrameReleaseResult {};
+// Only staged dependencies can be explicitly forgotten. get() still returns an
+// owning snapshot: forgetting the provider's reference never revokes a copy.
+class VideoStageFrameProvider : public VideoFrameProvider {
+public:
+  virtual Result<VideoFrameReleaseResult> release_frame(int input, int n) = 0;
+};
 struct VideoStageContext : VideoRequestContext {
-  VideoFrameProvider& frames; // Only frames acquired by earlier stages.
+  VideoStageFrameProvider& frames; // Only frames acquired by earlier stages.
   OutputOrigin& origin;      // Resolved after Ready; never fetched speculatively.
   VideoStageContext(int n, std::vector<VideoFrameRequest>& requests,
                     Span<const VideoInputInfo> inputs, const void* state,
-                    VideoFrameProvider& frames, OutputOrigin& origin)
+                    VideoStageFrameProvider& frames, OutputOrigin& origin)
     : VideoRequestContext{n,requests,inputs,state}, frames(frames), origin(origin) {}
+  Result<VideoFrameReleaseResult> release_frame(int input, int n) {
+    return frames.release_frame(input,n);
+  }
 };
 
 // One object per output request, never shared through instance-level state.
 // Hosts acquire pending() and call accept(), then resume advance().
 template<class Filter>
-class StagedVideoRequest final : public VideoFrameProvider {
+class StagedVideoRequest final : public VideoStageFrameProvider {
   static_assert(FilterRequirements<Filter>::value.frame_services,
                 "staged filters must opt into owning frame services");
 public:
@@ -39,6 +49,19 @@ public:
       "DualSynth: staged frame was not acquired"});
   }
   const std::vector<VideoFrameRequest>& pending() const { return pending_; }
+  Result<VideoFrameReleaseResult> release_frame(int input, int n) override {
+    if (!advancing_)
+      return Result<VideoFrameReleaseResult>::failure({ErrorCode::InvalidArgument,
+        "DualSynth: staged frames can only be released during advance"});
+    const auto found = std::find_if(frames_.begin(),frames_.end(),[&](const auto& frame) {
+      return frame.input_index == input && frame.frame_number == n;
+    });
+    if (found == frames_.end())
+      return Result<VideoFrameReleaseResult>::failure({ErrorCode::InvalidArgument,
+        "DualSynth: released staged frame was not acquired"});
+    frames_.erase(found);
+    return Result<VideoFrameReleaseResult>::success({});
+  }
   void accept(RequestedVideoFrame frame) {
     const auto index = frames_received_;
     if (index >= pending_.size() ||
@@ -55,7 +78,17 @@ public:
     frames_received_ = 0;
     if (ready_) return true;
     VideoStageContext context{n_,pending_,inputs,&state,*this,origin_};
-    const auto result = Filter::advance(context,request_);
+    const auto result = [&] {
+      advancing_ = true;
+      try {
+        auto result = Filter::advance(context,request_);
+        advancing_ = false;
+        return result;
+      } catch (...) {
+        advancing_ = false;
+        throw;
+      }
+    }();
     if (!result.has_value()) throw std::runtime_error(result.error().message);
     if (result.value() == VideoStageResult::Ready) {
       if (!pending_.empty()) throw std::logic_error("DualSynth: Ready stage requested more frames");
@@ -125,6 +158,7 @@ private:
   int n_;
   OutputOrigin origin_;
   bool ready_ = false;
+  bool advancing_ = false;
   std::size_t frames_received_ = 0;
   std::vector<VideoFrameRequest> pending_;
   std::vector<RequestedVideoFrame> frames_;

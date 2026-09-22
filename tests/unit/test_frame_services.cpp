@@ -260,3 +260,93 @@ TEST_CASE("Cross-stage temporal and zero-delta duplicates never reacquire frames
     CHECK(live_requests == 0);
   }
 }
+
+namespace {
+struct ReleasingStages : LifetimeStages {
+  struct State { bool origin = false; bool fail = false; };
+  struct RequestState { int step = 0; };
+  static ds::Result<ds::VideoStageResult> advance(ds::VideoStageContext& ctx, RequestState& r) {
+    if (r.step > 0) {
+      const int n = (r.step - 1) % 3;
+      {
+        auto copy = ctx.frames.get(0,n);
+        REQUIRE(copy.has_value());
+        REQUIRE(ctx.release_frame(0,n).has_value());
+        CHECK_FALSE(ctx.frames.get(0,n).has_value());
+        // An owning get() snapshot and its views remain valid after release.
+        CHECK_NOTHROW(copy.value().owner.view());
+        auto again = ctx.release_frame(0,n);
+        REQUIRE_FALSE(again.has_value());
+        CHECK(again.error().code == ds::ErrorCode::InvalidArgument);
+      }
+      if (ctx.state<State>().fail && r.step == 3) throw std::runtime_error("release stage failure");
+    }
+    auto missing = ctx.release_frame(-1,0);
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().code == ds::ErrorCode::InvalidArgument);
+    if (r.step == 64) {
+      if (ctx.state<State>().origin) {
+        ctx.origin = ds::OutputOrigin::fresh();
+        ctx.origin.prop_frame = 0; // Was just released: the framework must reacquire it.
+      }
+      return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::Ready);
+    }
+    ctx.request_frame(0,r.step % 3);
+    ctx.request_frame(0,r.step % 3);
+    // Declaring a request does not make it acquired/releasable.
+    CHECK_FALSE(ctx.release_frame(0,r.step % 3).has_value());
+    ++r.step;
+    return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::RequestFrames);
+  }
+  static ds::Result<ds::VideoProcessResult> process(ds::VideoProcessContext&, RequestState&) {
+    return ds::Result<ds::VideoProcessResult>::success({});
+  }
+};
+}
+
+TEST_CASE("Released staged dependencies bound ownership and can be reacquired including origins", "[staged_video]") {
+  const std::vector<ds::VideoInputInfo> inputs{{16,8,8}};
+  for (bool origin : {false,true}) {
+    int live = 0;
+    CountingProvider provider(live);
+    CountingFactory factory(live);
+    ReleasingStages::State state{origin,false};
+    {
+      ds::StagedVideoRequest<ReleasingStages> request(0,state);
+      CHECK_FALSE(request.release_frame(0,0).has_value());
+      while (!request.advance(inputs,state)) {
+        CHECK(live == 0);
+        for (const auto& dep : request.pending()) request.accept(provider.get(dep.input_index,dep.frame_number).value());
+        CHECK(live == 1);
+        CHECK_FALSE(request.release_frame(0,request.pending()[0].frame_number).has_value());
+      }
+      CHECK(provider.calls == (origin ? 65 : 64));
+      CHECK(live == (origin ? 1 : 0));
+      CHECK(request.get(0,0).has_value() == origin);
+      auto output = request.finish({16,8,8},inputs,state,factory);
+      CHECK(live == (origin ? 2 : 1));
+    }
+    CHECK(live == 0);
+  }
+}
+
+TEST_CASE("Released staged requests unwind on exceptions and unfinished request destruction", "[staged_video]") {
+  int live = 0;
+  CountingProvider provider(live);
+  const std::vector<ds::VideoInputInfo> inputs{{16,8,8}};
+  ReleasingStages::State state{false,true};
+  {
+    ds::StagedVideoRequest<ReleasingStages> request(0,state);
+    CHECK_THROWS_WITH(ds::acquire_video_stages(request,provider,inputs,state),"release stage failure");
+    CHECK(live == 0);
+    CHECK_FALSE(request.release_frame(0,0).has_value());
+  }
+  {
+    ds::StagedVideoRequest<ReleasingStages> request(0,state);
+    REQUIRE_FALSE(request.advance(inputs,state));
+    request.accept(provider.get(0,0).value());
+    CHECK(live == 1);
+    // Cancellation destroys request state without needing another advance.
+  }
+  CHECK(live == 0);
+}

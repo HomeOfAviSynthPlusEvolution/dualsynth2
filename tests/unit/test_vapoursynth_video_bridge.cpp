@@ -11,6 +11,150 @@
 #include <vector>
 
 namespace {
+struct StagedNativeFrame {
+  int references = 0;
+  uint8_t pixel = 37;
+};
+struct StagedNativeContext {
+  std::map<std::pair<VSNode*,int>,StagedNativeFrame*> available;
+  int gets = 0;
+  int releases = 0;
+  int fail_get = 0;
+  ~StagedNativeContext() {
+    for (const auto& entry : available) --entry.second->references;
+  }
+};
+const VSFrame* VS_CC staged_fake_get(int n, VSNode* node, VSFrameContext* ctx) noexcept {
+  auto& host = *reinterpret_cast<StagedNativeContext*>(ctx);
+  if (++host.gets == host.fail_get) return nullptr;
+  const auto it = host.available.find({node,n});
+  if (it == host.available.end()) return nullptr;
+  ++it->second->references;
+  return reinterpret_cast<const VSFrame*>(it->second);
+}
+void VS_CC staged_fake_release(VSNode* node, int n, VSFrameContext* ctx) noexcept {
+  auto& host = *reinterpret_cast<StagedNativeContext*>(ctx);
+  ++host.releases;
+  const auto it = host.available.find({node,n});
+  if (it != host.available.end()) {
+    --it->second->references;
+    host.available.erase(it);
+  }
+}
+void VS_CC staged_fake_free(const VSFrame* frame) noexcept {
+  --const_cast<StagedNativeFrame*>(reinterpret_cast<const StagedNativeFrame*>(frame))->references;
+}
+const VSVideoFormat* VS_CC staged_fake_format(const VSFrame*) noexcept {
+  static const VSVideoFormat format{cfGray,stInteger,8,1,0,0,1};
+  return &format;
+}
+const uint8_t* VS_CC staged_fake_pixels(const VSFrame* frame, int) noexcept {
+  return &reinterpret_cast<const StagedNativeFrame*>(frame)->pixel;
+}
+int VS_CC staged_fake_size(const VSFrame*, int) noexcept { return 1; }
+ptrdiff_t VS_CC staged_fake_stride(const VSFrame*, int) noexcept { return 1; }
+VSAPI staged_fake_api() {
+  VSAPI api{};
+  api.getFrameFilter = staged_fake_get;
+  api.releaseFrameEarly = staged_fake_release;
+  api.freeFrame = staged_fake_free;
+  api.getVideoFrameFormat = staged_fake_format;
+  api.getReadPtr = staged_fake_pixels;
+  api.getStride = staged_fake_stride;
+  api.getFrameWidth = staged_fake_size;
+  api.getFrameHeight = staged_fake_size;
+  return api;
+}
+struct AliasedStages {
+  static constexpr ds::HostRequirements host_requirements{true,0,0};
+  static constexpr ds::OutputOrigin output_origin = ds::OutputOrigin::fresh_without_props();
+  struct State { bool release = true; };
+  struct RequestState { int step = 0; };
+  static ds::Result<ds::VideoStageResult> advance(ds::VideoStageContext& ctx, RequestState& r) {
+    if (r.step++ == 0) {
+      ctx.request_frame(0,0);
+      ctx.request_frame(1,0);
+      return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::RequestFrames);
+    }
+    CHECK(*static_cast<const uint8_t*>(ctx.frames.get(0,0).value().frame.plane(0).data) == 37);
+    CHECK(ctx.frames.get(1,0).has_value());
+    if (r.step == 2 && ctx.state<State>().release) {
+      REQUIRE(ctx.release_frame(0,0).has_value());
+      ctx.request_frame(0,0);
+      return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::RequestFrames);
+    }
+    return ds::Result<ds::VideoStageResult>::success(ds::VideoStageResult::Ready);
+  }
+};
+}
+
+TEST_CASE("VS staged batches release host references after adopting all input aliases", "[staged_video]") {
+  auto api = staged_fake_api();
+  int node_token = 0;
+  auto* node = reinterpret_cast<VSNode*>(&node_token);
+  const std::vector<VSNode*> nodes{node,node};
+  const std::vector<ds::VideoInputInfo> inputs{{1,1,2},{1,1,2}};
+  for (bool release : {false,true}) {
+    StagedNativeFrame native;
+    StagedNativeContext host;
+    ds::FrameRef external;
+    AliasedStages::State state{release};
+    {
+      ds::StagedVideoRequest<AliasedStages> request(0,state);
+      while (!request.advance(inputs,state)) {
+        REQUIRE(host.available.empty());
+        host.available.emplace(std::make_pair(node,0),&native);
+        ++native.references; // A separate frameCtx reference, not the DS2 owner.
+        ds::vapoursynth::accept_staged_video_frames(request,nodes,
+          reinterpret_cast<VSFrameContext*>(&host),nullptr,&api);
+        CHECK(host.available.empty());
+        CHECK(native.references == 2);
+      }
+      CHECK(host.gets == (release ? 3 : 2));
+      CHECK(host.releases == (release ? 2 : 1));
+      external = request.get(1,0).value().owner;
+    }
+    CHECK(native.references == 1);
+    CHECK(*static_cast<const uint8_t*>(external.view().plane(0).data) == 37);
+    external = {};
+    CHECK(native.references == 0);
+  }
+}
+
+TEST_CASE("VS staged partial delivery and missing early release unwind owning frames", "[staged_video]") {
+  auto api = staged_fake_api();
+  int node_token = 0;
+  auto* node = reinterpret_cast<VSNode*>(&node_token);
+  const std::vector<VSNode*> nodes{node,node};
+  const std::vector<ds::VideoInputInfo> inputs{{1,1,2},{1,1,2}};
+  AliasedStages::State state;
+  StagedNativeFrame native;
+  {
+    StagedNativeContext host;
+    host.available.emplace(std::make_pair(node,0),&native);
+    ++native.references;
+    {
+      ds::StagedVideoRequest<AliasedStages> request(0,state);
+      REQUIRE_FALSE(request.advance(inputs,state));
+      api.releaseFrameEarly = nullptr;
+      CHECK_THROWS_WITH(ds::vapoursynth::accept_staged_video_frames(request,nodes,
+        reinterpret_cast<VSFrameContext*>(&host),nullptr,&api),
+        "DualSynth: staged video requires VapourSynth releaseFrameEarly");
+      CHECK(host.gets == 0);
+      api.releaseFrameEarly = staged_fake_release;
+      host.fail_get = 2;
+      CHECK_THROWS_WITH(ds::vapoursynth::accept_staged_video_frames(request,nodes,
+        reinterpret_cast<VSFrameContext*>(&host),nullptr,&api),
+        "DualSynth: staged frame was not provided");
+      CHECK(native.references == 2);
+      CHECK(host.releases == 0); // Incomplete batches unwind with the host request.
+    }
+    CHECK(native.references == 1);
+  }
+  CHECK(native.references == 0);
+}
+
+namespace {
 struct RequiredFrameServicesCore {
   static constexpr ds::HostRequirements host_requirements{true,0,0};
 };

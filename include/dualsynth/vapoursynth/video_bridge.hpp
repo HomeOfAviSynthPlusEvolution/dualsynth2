@@ -401,6 +401,34 @@ const VSFrame* execute_process_frame(
   return dst;
 }
 
+// Transfer the entire batch before releasing the host's duplicate references:
+// distinct input indices may alias the same native node/frame. Subsequent
+// staged lookups use the owning DS2 store, never the host's frame context.
+template <class Filter>
+void accept_staged_video_frames(StagedVideoRequest<Filter>& request,
+                               Span<VSNode* const> nodes, VSFrameContext* frame_ctx,
+                               VSCore* core, const VSAPI* api) {
+  if (!api->releaseFrameEarly)
+    throw std::runtime_error("DualSynth: staged video requires VapourSynth releaseFrameEarly");
+  FrameTraits traits{api,core};
+  const auto& pending = request.pending();
+  for (const auto& r : pending) {
+    const auto* native = api->getFrameFilter(r.frame_number,nodes[r.input_index],frame_ctx);
+    if (!native) throw std::runtime_error("DualSynth: staged frame was not provided");
+    auto owner = detail::NativeFrame<FrameTraits>::adopt(traits,native);
+    auto view = owner.view();
+    request.accept({r.input_index,r.frame_number,view,std::move(owner)});
+  }
+  for (std::size_t i = 0; i < pending.size(); ++i) {
+    const auto& r = pending[i];
+    bool duplicate = false;
+    for (std::size_t j = 0; j < i; ++j)
+      if (nodes[pending[j].input_index] == nodes[r.input_index] &&
+          pending[j].frame_number == r.frame_number) { duplicate = true; break; }
+    if (!duplicate) api->releaseFrameEarly(nodes[r.input_index],r.frame_number,frame_ctx);
+  }
+}
+
 template <class Bridge>
 const VSFrame* staged_video_filter_get_frame(
   int n, int activation, VideoFilterData<Bridge>* data, void** frame_data,
@@ -418,18 +446,14 @@ const VSFrame* staged_video_filter_get_frame(
   try {
     FrameTraits traits{api,core};
     if (activation == arInitial) {
+      if (!api->releaseFrameEarly)
+        throw std::runtime_error("DualSynth: staged video requires VapourSynth releaseFrameEarly");
       request = std::make_unique<Request>(n,data->state);
     } else {
       request.reset(static_cast<Request*>(*frame_data));
       *frame_data = nullptr;
       if (!request) throw std::logic_error("DualSynth: missing staged request");
-      for (const auto& r : request->pending()) {
-        const auto* native = api->getFrameFilter(r.frame_number,data->nodes[r.input_index],frame_ctx);
-        if (!native) throw std::runtime_error("DualSynth: staged frame was not provided");
-        auto owner = detail::NativeFrame<FrameTraits>::adopt(traits,native);
-        auto view = owner.view();
-        request->accept({r.input_index,r.frame_number,view,std::move(owner)});
-      }
+      accept_staged_video_frames(*request,data->nodes,frame_ctx,core,api);
     }
     if (!request->advance(data->input_infos,data->state)) {
       for (const auto& r : request->pending())
