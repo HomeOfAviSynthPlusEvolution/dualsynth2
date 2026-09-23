@@ -98,6 +98,8 @@ struct CApi {
   decltype(&avs_prop_num_elements) prop_num_elements{nullptr};
   decltype(&avs_prop_get_int) prop_get_int{nullptr};
   decltype(&avs_prop_get_float) prop_get_float{nullptr};
+  decltype(&avs_prop_get_int_array) prop_get_int_array{nullptr};
+  decltype(&avs_prop_get_float_array) prop_get_float_array{nullptr};
   decltype(&avs_prop_get_data) prop_get_data{nullptr};
   decltype(&avs_prop_get_data_size) prop_get_data_size{nullptr};
   decltype(&avs_prop_get_data_type_hint) prop_get_data_type_hint{nullptr};
@@ -173,6 +175,8 @@ struct CApi {
     prop_num_elements = reinterpret_cast<decltype(prop_num_elements)>(sym("avs_prop_num_elements"));
     prop_get_int = reinterpret_cast<decltype(prop_get_int)>(sym("avs_prop_get_int"));
     prop_get_float = reinterpret_cast<decltype(prop_get_float)>(sym("avs_prop_get_float"));
+    prop_get_int_array = reinterpret_cast<decltype(prop_get_int_array)>(sym("avs_prop_get_int_array"));
+    prop_get_float_array = reinterpret_cast<decltype(prop_get_float_array)>(sym("avs_prop_get_float_array"));
     prop_get_data = reinterpret_cast<decltype(prop_get_data)>(sym("avs_prop_get_data"));
     prop_get_data_size = reinterpret_cast<decltype(prop_get_data_size)>(sym("avs_prop_get_data_size"));
     prop_get_data_type_hint = reinterpret_cast<decltype(prop_get_data_type_hint)>(sym("avs_prop_get_data_type_hint"));

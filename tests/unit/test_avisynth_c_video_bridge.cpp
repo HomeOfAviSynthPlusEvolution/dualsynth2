@@ -1,3 +1,4 @@
+#include "numeric_property_probe.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/catch_approx.hpp>
@@ -363,4 +364,49 @@ TEST_CASE("AviSynth C bundle creation rejects missing version and ownership APIs
   api.copy_value = ownership_copy;
   check();
   saved_errors.clear();
+}
+
+namespace {
+NumericPropertyProbe& numeric_c_probe(const AVS_Map* map) {
+  return *reinterpret_cast<NumericPropertyProbe*>(const_cast<AVS_Map*>(map));
+}
+const AVS_Map* AVSC_CC numeric_c_props(AVS_ScriptEnvironment*, const AVS_VideoFrame* frame) noexcept {
+  return reinterpret_cast<const AVS_Map*>(frame);
+}
+int AVSC_CC numeric_c_count(AVS_ScriptEnvironment*, const AVS_Map* map, const char*) noexcept {
+  return numeric_c_probe(map).count;
+}
+char AVSC_CC numeric_c_type(AVS_ScriptEnvironment*, const AVS_Map* map, const char*) noexcept {
+  const auto& p = numeric_c_probe(map);
+  return p.type;
+}
+std::int64_t AVSC_CC numeric_c_int(AVS_ScriptEnvironment*, const AVS_Map* map, const char*, int i, int* e) noexcept {
+  return numeric_c_probe(map).get_int(i, e);
+}
+double AVSC_CC numeric_c_float(AVS_ScriptEnvironment*, const AVS_Map* map, const char*, int i, int* e) noexcept {
+  return numeric_c_probe(map).get_float(i, e);
+}
+const std::int64_t* AVSC_CC numeric_c_int_array(AVS_ScriptEnvironment*, const AVS_Map* map, const char*, int* e) noexcept {
+  return numeric_c_probe(map).get_int_array(e);
+}
+const double* AVSC_CC numeric_c_float_array(AVS_ScriptEnvironment*, const AVS_Map* map, const char*, int* e) noexcept {
+  return numeric_c_probe(map).get_float_array(e);
+}
+}
+TEST_CASE("AviSynth C numeric properties use owning bulk snapshots with optional fallback", "[frame_services][numeric_properties]") {
+  for (bool bulk_ints : {false, true}) for (bool bulk_floats : {false, true}) {
+    NumericPropertyProbe probe;
+    ds::avisynth::c::CApi api{};
+    api.get_frame_props_ro = numeric_c_props;
+    api.prop_num_elements = numeric_c_count;
+    api.prop_get_type = numeric_c_type;
+    api.prop_get_int = numeric_c_int;
+    api.prop_get_float = numeric_c_float;
+    api.prop_get_int_array = bulk_ints ? numeric_c_int_array : nullptr;
+    api.prop_get_float_array = bulk_floats ? numeric_c_float_array : nullptr;
+    auto* frame = reinterpret_cast<AVS_VideoFrame*>(&probe);
+    ds::avisynth::c::FrameTraits traits{nullptr, &api};
+    ds::detail::NativeProperties<ds::avisynth::c::FrameTraits> props(traits, frame, false);
+    check_numeric_properties(props, probe, bulk_ints, bulk_floats);
+  }
 }

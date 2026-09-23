@@ -34,6 +34,10 @@ struct FrameTraits {
   int num_keys(const Map* m) const { return api->mapNumKeys(m); }
   const char* key(const Map* m, int i) const { return api->mapGetKey(m, i); }
   int count(const Map* m, const char* k) const { return api->mapNumElements(m, k); }
+  bool has_int_array() const { return api->mapGetIntArray != nullptr; }
+  bool has_float_array() const { return api->mapGetFloatArray != nullptr; }
+  const std::int64_t* get_int_array(const Map* m, const char* k, int* e) const { return api->mapGetIntArray(m, k, e); }
+  const double* get_float_array(const Map* m, const char* k, int* e) const { return api->mapGetFloatArray(m, k, e); }
   std::int64_t get_int(const Map* m, const char* k, int i, int* e) const { return api->mapGetInt(m, k, i, e); }
   double get_float(const Map* m, const char* k, int i, int* e) const { return api->mapGetFloat(m, k, i, e); }
   const char* get_data(const Map* m, const char* k, int i, int* e) const { return api->mapGetData(m, k, i, e); }

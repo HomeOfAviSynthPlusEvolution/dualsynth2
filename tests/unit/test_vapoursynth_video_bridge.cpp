@@ -1,3 +1,4 @@
+#include "numeric_property_probe.hpp"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 #include <dualsynth/vapoursynth/video_bridge.hpp>
@@ -403,5 +404,50 @@ TEST_CASE("VS metadata retains categories of unreadable host objects", "[frame_s
     CHECK(info->type == item.second);
     CHECK(info->count == 2);
     CHECK_THROWS_AS(props.find("opaque"),std::invalid_argument);
+  }
+}
+
+namespace {
+NumericPropertyProbe& numeric_vs_probe(const VSMap* map) {
+  return *reinterpret_cast<NumericPropertyProbe*>(const_cast<VSMap*>(map));
+}
+const VSMap* VS_CC numeric_vs_props(const VSFrame* frame) noexcept {
+  return reinterpret_cast<const VSMap*>(frame);
+}
+int VS_CC numeric_vs_count(const VSMap* map, const char*) noexcept {
+  return numeric_vs_probe(map).count;
+}
+int VS_CC numeric_vs_type(const VSMap* map, const char*) noexcept {
+  const auto& p = numeric_vs_probe(map);
+  return p.type == 'i' ? ptInt : p.type == 'f' ? ptFloat : ptVideoNode;
+}
+std::int64_t VS_CC numeric_vs_int(const VSMap* map, const char*, int i, int* e) noexcept {
+  return numeric_vs_probe(map).get_int(i, e);
+}
+double VS_CC numeric_vs_float(const VSMap* map, const char*, int i, int* e) noexcept {
+  return numeric_vs_probe(map).get_float(i, e);
+}
+const std::int64_t* VS_CC numeric_vs_int_array(const VSMap* map, const char*, int* e) noexcept {
+  return numeric_vs_probe(map).get_int_array(e);
+}
+const double* VS_CC numeric_vs_float_array(const VSMap* map, const char*, int* e) noexcept {
+  return numeric_vs_probe(map).get_float_array(e);
+}
+}
+TEST_CASE("VapourSynth numeric properties use owning bulk snapshots with optional fallback", "[frame_services][numeric_properties]") {
+  for (bool bulk_ints : {false, true}) for (bool bulk_floats : {false, true}) {
+    NumericPropertyProbe probe;
+    VSAPI api{};
+    api.getFramePropertiesRO = numeric_vs_props;
+    api.mapNumElements = numeric_vs_count;
+    api.mapGetType = numeric_vs_type;
+    api.mapGetInt = numeric_vs_int;
+    api.mapGetFloat = numeric_vs_float;
+    api.mapGetIntArray = bulk_ints ? numeric_vs_int_array : nullptr;
+    api.mapGetFloatArray = bulk_floats ? numeric_vs_float_array : nullptr;
+    const auto* frame = reinterpret_cast<const VSFrame*>(&probe);
+    ds::vapoursynth::FrameTraits traits{&api, nullptr};
+    ds::detail::NativeProperties<ds::vapoursynth::FrameTraits> props(traits, frame, false);
+    check_numeric_properties(props, probe, bulk_ints, bulk_floats);
   }
 }

@@ -48,12 +48,30 @@ public:
     const auto type = traits_.type(map, key);
     if (type == 'i') {
       std::vector<std::int64_t> values;
+      if (count == 0) return PropertyValue(std::move(values));
+      if (traits_.has_int_array()) {
+        int error = 0;
+        const auto* data = traits_.get_int_array(map, key, &error);
+        check(error);
+        if (!data) throw std::runtime_error("DualSynth: invalid property array");
+        values.assign(data, data + count);
+        return PropertyValue(std::move(values));
+      }
       values.reserve(count);
       for (int i = 0; i < count; ++i) { int error = 0; auto v = traits_.get_int(map, key, i, &error); check(error); values.push_back(v); }
       return PropertyValue(std::move(values));
     }
     if (type == 'f') {
       std::vector<double> values;
+      if (count == 0) return PropertyValue(std::move(values));
+      if (traits_.has_float_array()) {
+        int error = 0;
+        const auto* data = traits_.get_float_array(map, key, &error);
+        check(error);
+        if (!data) throw std::runtime_error("DualSynth: invalid property array");
+        values.assign(data, data + count);
+        return PropertyValue(std::move(values));
+      }
       values.reserve(count);
       for (int i = 0; i < count; ++i) { int error = 0; auto v = traits_.get_float(map, key, i, &error); check(error); values.push_back(v); }
       return PropertyValue(std::move(values));

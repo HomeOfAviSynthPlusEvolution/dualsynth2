@@ -27,6 +27,11 @@ struct FrameTraits {
   int num_keys(const Map* m) const { return env->propNumKeys(m); }
   const char* key(const Map* m, int i) const { return env->propGetKey(m, i); }
   int count(const Map* m, const char* k) const { return env->propNumElements(m, k); }
+  // These virtual methods are part of interface 8; frame services require 11.
+  bool has_int_array() const { return true; }
+  bool has_float_array() const { return true; }
+  const std::int64_t* get_int_array(const Map* m, const char* k, int* e) const { return env->propGetIntArray(m, k, e); }
+  const double* get_float_array(const Map* m, const char* k, int* e) const { return env->propGetFloatArray(m, k, e); }
   std::int64_t get_int(const Map* m, const char* k, int i, int* e) const { return env->propGetInt(m, k, i, e); }
   double get_float(const Map* m, const char* k, int i, int* e) const { return env->propGetFloat(m, k, i, e); }
   const char* get_data(const Map* m, const char* k, int i, int* e) const { return env->propGetData(m, k, i, e); }

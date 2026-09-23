@@ -33,6 +33,39 @@ struct FrameServices {
     check(array != nullptr, "property type mismatch");
     return *array;
   }
+  static void verify_numeric_snapshots(FrameFactory& factory) {
+    std::vector<std::int64_t> ints(32000);
+    std::vector<double> floats(32000);
+    for (int i = 0; i < 32000; ++i) {
+      ints[i] = 9007199254740993LL - i * 17;
+      floats[i] = (i - 16000) / 8.0;
+    }
+    floats[0] = -0.0;
+    std::optional<PropertyValue> int_snapshot, float_snapshot;
+    {
+      auto frame = factory.allocate({ColorFamily::Gray,SampleFormat::UInt8,1,0,0},1,1);
+      auto& props = *frame.view().properties;
+      props.set("Ints", ints);
+      props.set("Floats", floats);
+      props.set("EmptyInts", std::vector<std::int64_t>{});
+      props.set("EmptyFloats", std::vector<double>{});
+      int_snapshot = props.find("Ints");
+      float_snapshot = props.find("Floats");
+      check(int_snapshot && float_snapshot, "numeric snapshots missing");
+      check(get<std::int64_t>(props,"EmptyInts").empty(), "empty integer snapshot");
+      check(get<double>(props,"EmptyFloats").empty(), "empty float snapshot");
+      check(!props.find("Missing"), "missing numeric property");
+      // Replacing the values and releasing the only frame owner must not affect
+      // PropertyValue, including on the AviSynth C++ virtual-interface path.
+      props.set("Ints", std::vector<std::int64_t>{-1});
+      props.set("Floats", std::vector<double>{-1.0});
+    }
+    check(std::get<std::vector<std::int64_t>>(*int_snapshot) == ints, "integer snapshot lifetime or order");
+    const auto& actual = std::get<std::vector<double>>(*float_snapshot);
+    check(actual.size() == floats.size() &&
+          std::memcmp(actual.data(),floats.data(),floats.size() * sizeof(double)) == 0,
+          "float snapshot lifetime or order");
+  }
   static void verify(const VideoFrameView& view) {
     check(view.properties != nullptr, "missing properties");
     const auto& props = *view.properties;
@@ -72,6 +105,7 @@ struct FrameServices {
   }
   static Result<VideoInitStateResult<State>> init(VideoInitContext& ctx) {
     check(ctx.inputs.size() >= 1 && ctx.frames && ctx.frame_factory, "initialization services");
+    verify_numeric_snapshots(*ctx.frame_factory);
     check(ctx.input_groups.size() == 2 && ctx.input_groups[0].name == "clips" &&
           ctx.input_groups[0].count >= 1 && ctx.input_groups[1].name == "extra", "input groups");
     auto verify_param = ctx.params->get_bool("verify",false);
