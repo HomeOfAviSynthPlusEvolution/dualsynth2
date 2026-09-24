@@ -249,12 +249,12 @@ public:
   template <class IndexY, class IndexX,
             typename = std::enable_if_t<std::is_integral_v<IndexY> && std::is_integral_v<IndexX>>>
   [[nodiscard]] SPAN2D_FORCEINLINE reference operator()(IndexY y, IndexX x) const noexcept {
-    return data_[static_cast<std::size_t>(y) * stride_ + x];
+    return data_[static_cast<std::ptrdiff_t>(y) * stride_ + static_cast<std::ptrdiff_t>(x)];
   }
 
   template <class IndexY, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
   [[nodiscard]] SPAN2D_FORCEINLINE pointer row_ptr(IndexY y) const noexcept {
-    return data_ + static_cast<std::size_t>(y) * stride_;
+    return data_ + static_cast<std::ptrdiff_t>(y) * stride_;
   }
 
   template <class IndexY, typename = std::enable_if_t<std::is_integral_v<IndexY>>>
@@ -271,7 +271,7 @@ public:
   [[nodiscard]] constexpr cursor_type end() const noexcept { return cursor(height_); }
 
   [[nodiscard]] constexpr BasicPlane subplane(size_type x, size_type y, size_type w, size_type h) const noexcept {
-    return BasicPlane(data_ + static_cast<std::size_t>(y) * stride_ + x, w, h, stride_bytes());
+    return BasicPlane(data_ + static_cast<std::ptrdiff_t>(y) * stride_ + x, w, h, stride_bytes());
   }
 
   // Converters

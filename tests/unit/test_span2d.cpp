@@ -101,6 +101,57 @@ TEST_CASE("span2d Plane indexes stride-backed 2D planes and extracts rows") {
   REQUIRE(sub(1, 1) == 202);
 }
 
+TEST_CASE("span2d negative strides preserve signed offsets for all plane views") {
+  constexpr int width = 4;
+  constexpr int height = 3;
+  constexpr int stride_elements = 8;
+  std::array<std::uint16_t, stride_elements * height> buffer{};
+  for (std::size_t i = 0; i < buffer.size(); ++i) {
+    buffer[i] = static_cast<std::uint16_t>(i);
+  }
+  span2d::Plane<std::uint16_t> plane(buffer.data() + 16, width, height,
+    -stride_elements * static_cast<std::ptrdiff_t>(sizeof(buffer[0])));
+
+  const auto check_view = [&](auto view) {
+    CHECK(view.stride() == -stride_elements);
+    for (int y = 0; y < height; ++y) {
+      const auto uy = static_cast<std::size_t>(y);
+      auto* expected_row = buffer.data() + (height - 1 - y) * stride_elements;
+      CHECK(view.row_ptr(y) == expected_row);
+      CHECK(view.row_ptr(uy) == expected_row);
+      CHECK(view.row(uy).data() == expected_row);
+      CHECK(view.cursor(uy).ptr() == expected_row);
+      for (int x = 0; x < width; ++x) {
+        const auto ux = static_cast<std::size_t>(x);
+        CHECK(view(y, x) == expected_row[x]);
+        CHECK(view(y, ux) == expected_row[x]);
+        CHECK(view(uy, x) == expected_row[x]);
+        CHECK(view(uy, ux) == expected_row[x]);
+      }
+    }
+    const auto sub = view.subplane(1, 1, 2, 2);
+    CHECK(sub.width() == 2);
+    CHECK(sub.height() == 2);
+    CHECK(sub.stride_bytes() == view.stride_bytes());
+    CHECK(sub.data() == buffer.data() + 9);
+    CHECK(sub.row_ptr(std::size_t{1}) == buffer.data() + 1);
+    CHECK(sub(1, std::size_t{1}) == 2);
+    CHECK(sub.subplane(1, 1, 1, 1).data() == buffer.data() + 2);
+  };
+
+  span2d::Plane<const std::uint16_t> readonly = plane;
+  span2d::RestrictPlane<const std::uint16_t> readonly_restricted = plane.as_restrict();
+  check_view(plane);
+  check_view(readonly);
+  check_view(plane.as_restrict());
+  check_view(readonly_restricted);
+
+  plane(std::size_t{2}, std::size_t{3}) = 100;
+  plane.subplane(1, 1, 2, 2)(1, 0) = 200;
+  CHECK(buffer[3] == 100);
+  CHECK(buffer[1] == 200);
+}
+
 TEST_CASE("span2d RowCursor steps through scanlines and supports relative peeking") {
   constexpr int width = 4;
   constexpr int height = 3;
