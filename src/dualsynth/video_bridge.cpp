@@ -48,6 +48,7 @@ Result<std::string> make_vapoursynth_signature(const FilterDescriptor& descripto
   }
 
   std::ostringstream signature;
+  signature.exceptions(std::ios::badbit | std::ios::failbit);
   for (const auto& param : descriptor.params) {
     if (!param.vs_enabled) {
       continue;
@@ -74,6 +75,8 @@ Result<std::string> make_avisynth_signature(const FilterDescriptor& descriptor) 
 
   std::ostringstream signature;
   std::ostringstream array_overloads;
+  signature.exceptions(std::ios::badbit | std::ios::failbit);
+  array_overloads.exceptions(std::ios::badbit | std::ios::failbit);
 
   for (const auto& param : descriptor.params) {
     if (!param.avs_enabled) {

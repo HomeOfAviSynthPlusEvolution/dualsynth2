@@ -54,6 +54,12 @@ endif()
 include(Catch)
 catch_discover_tests(dualsynth_unit_tests)
 
+add_executable(dualsynth_signature_allocation_tests unit/test_signature_allocation.cpp)
+target_link_libraries(dualsynth_signature_allocation_tests PRIVATE DualSynth::dualsynth)
+target_compile_features(dualsynth_signature_allocation_tests PRIVATE cxx_std_17)
+ds_apply_compiler_options(dualsynth_signature_allocation_tests)
+add_test(NAME dualsynth.signature_allocation COMMAND dualsynth_signature_allocation_tests)
+
 if(DS_ENABLE_VAPOURSYNTH)
   find_program(DS_VSPIPE_EXECUTABLE vspipe)
 endif()
