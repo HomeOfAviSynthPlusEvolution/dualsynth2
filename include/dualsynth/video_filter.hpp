@@ -87,7 +87,7 @@ template<class Filter, class State> struct HasRequestPattern<Filter, State,
 template<class Filter, class State>
 VideoRequestPattern video_request_pattern(int input, const State& state) {
   if constexpr (HasRequestPattern<Filter, State>::value) return Filter::request_pattern(input, state);
-  return VideoRequestPattern::General; // Safe default for temporal filters.
+  else return VideoRequestPattern::General; // Safe default for temporal filters.
 }
 
 class VideoFrameProvider;
