@@ -66,7 +66,7 @@ struct CarrierWriter {
     return ds::Result<ds::VideoProcessResult>::success({});
   }
 };
-struct CarrierProperties : CarrierWriter { static constexpr bool writes_output_pixels = false; };
+struct CarrierProperties : CarrierWriter { static constexpr bool needs_output_pixel_access = false; };
 template<class Filter> struct CarrierBridge { using Core = Filter; };
 template<class Filter> void check_carrier(bool fail) {
   CarrierContext context;
@@ -99,7 +99,7 @@ template<class Filter> void check_carrier(bool fail) {
     REQUIRE(output != nullptr);
     const auto& frame = *reinterpret_cast<const CarrierFrame*>(output);
     CHECK(frame.property == 99);
-    if constexpr (ds::FilterWritesOutputPixels<Filter>::value) {
+    if constexpr (ds::FilterNeedsOutputPixelAccess<Filter>::value) {
       CHECK(frame.write_calls == 1);
       CHECK(frame.pixel != input.pixel);
       CHECK(*frame.pixel == 55);

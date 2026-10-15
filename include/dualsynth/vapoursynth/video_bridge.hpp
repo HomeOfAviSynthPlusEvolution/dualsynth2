@@ -384,7 +384,7 @@ const VSFrame* execute_process_frame(
   detail::NativeFrameFactory<FrameTraits> factory(traits);
   MutableVideoFrameView view{};
   view.format = data->output_format;
-  if constexpr (FilterWritesOutputPixels<Filter>::value)
+  if constexpr (FilterNeedsOutputPixelAccess<Filter>::value)
     view = make_mutable_video_frame_view(dst, data->output_format, vsapi);
   if constexpr (FilterRequirements<Filter>::value.frame_services) view.properties = &properties;
   const auto result = process_video_filter<Filter>(
