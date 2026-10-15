@@ -80,6 +80,15 @@ template<class Filter> struct FilterRequirements<Filter, std::void_t<decltype(Fi
   static constexpr HostRequirements value = Filter::host_requirements;
 };
 
+// Ordinary VS processing can opt out of writable output planes to preserve
+// shared carrier pixels. Such filters receive properties and no pixel planes.
+// Read pixels through input frames instead of the output view.
+// Other host paths may still supply writable planes; this is an optimization hint.
+template<class Filter, class = void> struct FilterWritesOutputPixels : std::true_type {};
+template<class Filter> struct FilterWritesOutputPixels<Filter,
+  std::void_t<decltype(Filter::writes_output_pixels)>>
+  : std::bool_constant<Filter::writes_output_pixels> {};
+
 enum class VideoRequestPattern { General, StrictSpatial, NoFrameReuse };
 template<class Filter, class State, class = void> struct HasRequestPattern : std::false_type {};
 template<class Filter, class State> struct HasRequestPattern<Filter, State,

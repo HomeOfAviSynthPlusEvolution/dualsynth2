@@ -6,10 +6,119 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <variant>
 #include <vector>
+
+namespace {
+struct CarrierFrame {
+  std::shared_ptr<uint8_t> pixel = std::make_shared<uint8_t>(37);
+  std::int64_t property = 7;
+  int write_calls = 0;
+  bool allocated = false;
+};
+struct CarrierContext { int freed = 0; std::string error; };
+CarrierContext* carrier_context = nullptr;
+VSFrame* VS_CC carrier_new(const VSVideoFormat*, int, int, const VSFrame** planes,
+                          const int*, const VSFrame* props, VSCore*) noexcept {
+  auto* frame = new CarrierFrame(*reinterpret_cast<const CarrierFrame*>(planes[0]));
+  frame->property = reinterpret_cast<const CarrierFrame*>(props)->property;
+  frame->allocated = true;
+  return reinterpret_cast<VSFrame*>(frame);
+}
+void VS_CC carrier_free(const VSFrame* ptr) noexcept {
+  auto* frame = reinterpret_cast<const CarrierFrame*>(ptr);
+  if (frame->allocated) { ++carrier_context->freed; delete frame; }
+}
+uint8_t* VS_CC carrier_write(VSFrame* ptr, int) noexcept {
+  auto& frame = *reinterpret_cast<CarrierFrame*>(ptr);
+  ++frame.write_calls;
+  if (!frame.pixel.unique()) frame.pixel = std::make_shared<uint8_t>(*frame.pixel);
+  return frame.pixel.get();
+}
+VSMap* VS_CC carrier_props(VSFrame* ptr) noexcept {
+  return reinterpret_cast<VSMap*>(&reinterpret_cast<CarrierFrame*>(ptr)->property);
+}
+int VS_CC carrier_set(VSMap* ptr, const char*, const int64_t* values, int count) noexcept {
+  if (count != 1) return 1;
+  *reinterpret_cast<int64_t*>(ptr) = values[0];
+  return 0;
+}
+void VS_CC carrier_error(const char* text, VSFrameContext*) noexcept { carrier_context->error = text; }
+ptrdiff_t VS_CC carrier_stride(const VSFrame*, int) noexcept { return 1; }
+int VS_CC carrier_size(const VSFrame*, int) noexcept { return 1; }
+struct CarrierWriter {
+  static constexpr int input_count = 1;
+  static constexpr ds::HostRequirements host_requirements{true,0,0};
+  struct State { bool fail = false; };
+  static ds::Result<ds::VideoProcessResult> process(ds::VideoProcessContext& ctx) {
+    if (ctx.dst.plane_count == 0) {
+      CHECK_THROWS_AS(ctx.dst.plane(0), std::out_of_range);
+    } else {
+      *static_cast<uint8_t*>(ctx.dst.plane(0).data) = 55;
+    }
+    REQUIRE(ctx.dst.properties != nullptr);
+    ctx.dst.properties->set("probe", std::vector<std::int64_t>{99});
+    if (ctx.state<State>().fail)
+      return ds::Result<ds::VideoProcessResult>::failure({ds::ErrorCode::HostError,"probe failure"});
+    return ds::Result<ds::VideoProcessResult>::success({});
+  }
+};
+struct CarrierProperties : CarrierWriter { static constexpr bool writes_output_pixels = false; };
+template<class Filter> struct CarrierBridge { using Core = Filter; };
+template<class Filter> void check_carrier(bool fail) {
+  CarrierContext context;
+  carrier_context = &context;
+  CarrierFrame input;
+  VSAPI api{};
+  api.newVideoFrame2 = carrier_new;
+  api.freeFrame = carrier_free;
+  api.getWritePtr = carrier_write;
+  api.getStride = carrier_stride;
+  api.getFrameWidth = carrier_size;
+  api.getFrameHeight = carrier_size;
+  api.getFramePropertiesRW = carrier_props;
+  api.mapSetIntArray = carrier_set;
+  api.setFilterError = carrier_error;
+  ds::vapoursynth::VideoFilterData<CarrierBridge<Filter>> data;
+  data.video_info.format = {cfGray,stInteger,8,1,0,0,1};
+  data.video_info.width = data.video_info.height = 1;
+  data.state.fail = fail;
+  const std::array<ds::VideoFrameRequest,1> requests{{{0,0}}};
+  ds::vapoursynth::AcquiredFramesHolder holder{{reinterpret_cast<const VSFrame*>(&input)}, &api};
+  const auto* output = ds::vapoursynth::execute_process_frame<CarrierBridge<Filter>>(
+    0,&data,requests,holder,ds::OutputOrigin::copy_from_input(0),nullptr,nullptr,&api);
+  CHECK(input.property == 7);
+  CHECK(*input.pixel == 37);
+  if (fail) {
+    CHECK(output == nullptr);
+    CHECK(context.error == "probe failure");
+  } else {
+    REQUIRE(output != nullptr);
+    const auto& frame = *reinterpret_cast<const CarrierFrame*>(output);
+    CHECK(frame.property == 99);
+    if constexpr (ds::FilterWritesOutputPixels<Filter>::value) {
+      CHECK(frame.write_calls == 1);
+      CHECK(frame.pixel != input.pixel);
+      CHECK(*frame.pixel == 55);
+    } else {
+      CHECK(frame.write_calls == 0);
+      CHECK(frame.pixel == input.pixel);
+    }
+    api.freeFrame(output);
+  }
+  CHECK(context.freed == 1);
+}
+}
+
+TEST_CASE("VS property-only processing preserves shared pixels and isolates properties", "[frame_services]") {
+  check_carrier<CarrierProperties>(false);
+  check_carrier<CarrierProperties>(true);
+  check_carrier<CarrierWriter>(false);
+  check_carrier<CarrierWriter>(true);
+}
 
 namespace {
 struct StagedNativeFrame {
